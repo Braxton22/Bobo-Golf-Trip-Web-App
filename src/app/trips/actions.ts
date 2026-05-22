@@ -123,6 +123,19 @@ export async function cancelBet(formData: FormData) {
   revalidatePath(`/bets`);
 }
 
+export async function setHandicap(formData: FormData) {
+  const supabase = await createClient();
+  const tripId = str(formData.get("trip_id"));
+  const profileId = str(formData.get("profile_id"));
+  if (!tripId || !profileId) return;
+  await supabase
+    .from("trip_members")
+    .update({ handicap: num(formData.get("handicap")) })
+    .eq("trip_id", tripId)
+    .eq("profile_id", profileId);
+  revalidatePath(`/trips/${tripId}`);
+}
+
 export async function saveScore(formData: FormData) {
   const supabase = await createClient();
   const roundId = str(formData.get("round_id"));

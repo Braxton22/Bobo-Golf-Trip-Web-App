@@ -1,5 +1,30 @@
 import { notFound } from "next/navigation";
+import {
+  CalendarDays,
+  DollarSign,
+  ExternalLink,
+  Flag,
+  Home,
+  Trophy,
+  Users,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { computeLeaderboard, type MemberInput } from "@/lib/scoring";
+import { Leaderboard } from "@/components/leaderboard";
+import { RealtimeRefresher } from "@/components/realtime-refresher";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { TripHeader } from "@/components/trip-detail/trip-header";
+import { SectionHeading } from "@/components/trip-detail/section-heading";
 import {
   addAirbnb,
   addBet,
@@ -7,10 +32,33 @@ import {
   cancelBet,
   joinTrip,
   saveScore,
+  setHandicap,
   settleBet,
 } from "../actions";
 
-type Profile = { id: string; display_name: string };
+type Member = {
+  id: string;
+  display_name: string;
+  handicap: number | null;
+  role: string | null;
+};
+
+function formatDate(value: string | null) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+const betStatusVariant: Record<string, "live" | "secondary" | "outline"> = {
+  open: "live",
+  settled: "secondary",
+  cancelled: "outline",
+};
 
 export default async function TripDetail({
   params,
@@ -19,7 +67,9 @@ export default async function TripDetail({
 }) {
   const { id: tripId } = await params;
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   const { data: trip } = await supabase
     .from("trips")
@@ -30,14 +80,22 @@ export default async function TripDetail({
 
   const { data: members } = await supabase
     .from("trip_members")
-    .select("profile_id, role, profiles(id, display_name)")
+    .select("profile_id, role, handicap, profiles(id, display_name)")
     .eq("trip_id", tripId);
 
-  const memberProfiles: Profile[] = (members ?? [])
-    .map((m: any) => m.profiles)
-    .filter(Boolean);
+  const roster: Member[] = (members ?? [])
+    .map((m: any) => {
+      if (!m.profiles) return null;
+      return {
+        id: m.profiles.id as string,
+        display_name: m.profiles.display_name as string,
+        handicap: (m.handicap ?? null) as number | null,
+        role: (m.role ?? null) as string | null,
+      };
+    })
+    .filter(Boolean) as Member[];
 
-  const isMember = memberProfiles.some((p) => p.id === user?.id);
+  const isMember = roster.some((p) => p.id === user?.id);
 
   const { data: rounds } = await supabase
     .from("rounds")
@@ -67,287 +125,471 @@ export default async function TripDetail({
 
   if (!isMember) {
     return (
-      <div className="card max-w-md mx-auto">
-        <h1 className="text-xl font-bold text-fairway-700">{trip.name}</h1>
-        <p className="mt-2 text-sm text-fairway-900/70">
-          You're not on this trip yet. Join to log rounds and bets.
-        </p>
-        <form action={joinTrip} className="mt-3">
-          <input type="hidden" name="trip_id" value={trip.id} />
-          <button className="btn">Join trip</button>
-        </form>
+      <div className="mx-auto flex max-w-md flex-col items-center pt-12 text-center">
+        <Card className="w-full animate-fade-in shadow-lift">
+          <CardHeader className="items-center text-center">
+            <span className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <Trophy className="h-6 w-6" />
+            </span>
+            <CardTitle>{trip.name}</CardTitle>
+            <CardDescription>
+              You&apos;re not on this trip yet. Join to log rounds, post
+              scores, and get in on the side bets.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form action={joinTrip}>
+              <input type="hidden" name="trip_id" value={trip.id} />
+              <Button className="w-full" size="lg">
+                Join trip
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
-  const scoreFor = (roundId: string, profileId: string) =>
-    (scores ?? []).find((s: any) => s.round_id === roundId && s.profile_id === profileId)
-      ?.total_strokes ?? "";
+  const leaderboardMembers: MemberInput[] = roster.map((m) => ({
+    id: m.id,
+    display_name: m.display_name,
+    handicap: m.handicap,
+  }));
+  const leaderboardRows = computeLeaderboard(
+    leaderboardMembers,
+    (rounds ?? []).map((r) => ({ id: r.id, par: r.par })),
+    (scores ?? []) as any[]
+  );
 
-  const leaderboard = memberProfiles
-    .map((p) => {
-      const totals = (scores ?? [])
-        .filter((s: any) => s.profile_id === p.id)
-        .reduce((a: number, s: any) => a + (s.total_strokes ?? 0), 0);
-      const played = (scores ?? []).filter((s: any) => s.profile_id === p.id).length;
-      return { ...p, totals, played };
-    })
-    .sort((a, b) => (a.totals || 9999) - (b.totals || 9999));
+  const scoreFor = (roundId: string, profileId: string) =>
+    (scores ?? []).find(
+      (s: any) => s.round_id === roundId && s.profile_id === profileId
+    )?.total_strokes ?? "";
 
   return (
-    <div className="space-y-8">
-      <header className="flex items-end justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-fairway-700">{trip.name}</h1>
-          <p className="text-sm text-fairway-900/70">
-            {trip.location ?? "Location TBD"} · {trip.starts_on ?? "?"} → {trip.ends_on ?? "?"}
-          </p>
-        </div>
-        <div className="text-xs text-fairway-900/60">
-          {memberProfiles.length} player{memberProfiles.length === 1 ? "" : "s"}
-        </div>
-      </header>
+    <div className="space-y-10">
+      <RealtimeRefresher />
+
+      <TripHeader
+        name={trip.name}
+        location={trip.location}
+        startsOn={trip.starts_on}
+        endsOn={trip.ends_on}
+        playerCount={roster.length}
+      />
 
       {/* Leaderboard */}
-      <section className="card">
-        <h2 className="font-semibold text-fairway-700">🏆 Leaderboard</h2>
-        <table className="mt-3 w-full text-sm">
-          <thead className="text-left text-xs uppercase text-fairway-900/60">
-            <tr>
-              <th className="py-1">Player</th>
-              <th>Rounds</th>
-              <th>Total strokes</th>
-            </tr>
-          </thead>
-          <tbody>
-            {leaderboard.map((p) => (
-              <tr key={p.id} className="border-t border-fairway-100">
-                <td className="py-1">{p.display_name}</td>
-                <td>{p.played}</td>
-                <td>{p.totals || "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <section className="space-y-4 animate-fade-in">
+        <SectionHeading
+          icon={Trophy}
+          title="Leaderboard"
+          description="Net scoring — gross strokes less per-trip handicap."
+        />
+        <Leaderboard
+          rows={leaderboardRows}
+          live
+          emptyLabel="No scores posted yet — add a round and start posting."
+        />
       </section>
 
       {/* Rounds */}
-      <section className="card">
-        <h2 className="font-semibold text-fairway-700">⛳ Rounds</h2>
-        <form action={addRound} className="mt-3 grid gap-3 md:grid-cols-5">
-          <input type="hidden" name="trip_id" value={trip.id} />
-          <div className="md:col-span-2">
-            <label className="label">Course</label>
-            <input name="course_name" required className="input" placeholder="Pinehurst No. 2" />
-          </div>
-          <div>
-            <label className="label">Date</label>
-            <input name="played_on" type="date" required className="input" />
-          </div>
-          <div>
-            <label className="label">Par</label>
-            <input name="par" type="number" className="input" placeholder="72" />
-          </div>
-          <div className="flex items-end">
-            <button className="btn w-full">Add round</button>
-          </div>
-        </form>
+      <section className="space-y-4">
+        <SectionHeading
+          icon={Flag}
+          title="Rounds"
+          description="Log each round and post every player's strokes."
+        />
 
-        <div className="mt-5 space-y-5">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Add a round</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form
+              action={addRound}
+              className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5"
+            >
+              <input type="hidden" name="trip_id" value={trip.id} />
+              <div className="space-y-1.5 lg:col-span-2">
+                <Label htmlFor="course_name">Course</Label>
+                <Input
+                  id="course_name"
+                  name="course_name"
+                  required
+                  placeholder="Pinehurst No. 2"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="played_on">Date</Label>
+                <Input id="played_on" name="played_on" type="date" required />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="par">Par</Label>
+                <Input id="par" name="par" type="number" placeholder="72" />
+              </div>
+              <div className="flex items-end">
+                <Button className="w-full">Add round</Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+
+        <div className="space-y-4">
           {(rounds ?? []).map((r) => (
-            <div key={r.id} className="rounded-lg border border-fairway-100 p-4">
-              <div className="flex items-baseline justify-between">
+            <Card key={r.id} className="transition-shadow hover:shadow-lift">
+              <CardHeader className="flex-row items-center justify-between gap-3">
                 <div>
-                  <h3 className="font-semibold">{r.course_name}</h3>
-                  <p className="text-xs text-fairway-900/60">
-                    {r.played_on}
-                    {r.par ? ` · par ${r.par}` : ""}
-                  </p>
+                  <CardTitle className="text-lg">{r.course_name}</CardTitle>
+                  <CardDescription className="flex items-center gap-1.5">
+                    <CalendarDays className="h-3.5 w-3.5" />
+                    {formatDate(r.played_on) ?? r.played_on}
+                  </CardDescription>
                 </div>
-              </div>
-              <div className="mt-3 grid gap-2 md:grid-cols-2">
-                {memberProfiles.map((p) => (
-                  <form
-                    key={p.id}
-                    action={saveScore}
-                    className="flex items-center gap-2"
-                  >
-                    <input type="hidden" name="round_id" value={r.id} />
-                    <input type="hidden" name="profile_id" value={p.id} />
-                    <input type="hidden" name="trip_id" value={trip.id} />
-                    <span className="w-32 truncate text-sm">{p.display_name}</span>
-                    <input
-                      name="total_strokes"
-                      type="number"
-                      defaultValue={scoreFor(r.id, p.id)}
-                      className="input flex-1"
-                      placeholder="strokes"
-                    />
-                    <button className="btn-ghost">Save</button>
-                  </form>
-                ))}
-              </div>
-            </div>
+                {r.par ? (
+                  <Badge variant="outline">Par {r.par}</Badge>
+                ) : null}
+              </CardHeader>
+              <CardContent>
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Post scores
+                </p>
+                <div className="grid gap-2.5 sm:grid-cols-2">
+                  {roster.map((p) => (
+                    <form
+                      key={p.id}
+                      action={saveScore}
+                      className="flex items-center gap-2.5 rounded-lg border border-border bg-muted/40 px-3 py-2"
+                    >
+                      <input type="hidden" name="round_id" value={r.id} />
+                      <input type="hidden" name="profile_id" value={p.id} />
+                      <input type="hidden" name="trip_id" value={trip.id} />
+                      <span className="w-28 shrink-0 truncate text-sm font-medium">
+                        {p.display_name}
+                      </span>
+                      <Input
+                        name="total_strokes"
+                        type="number"
+                        defaultValue={scoreFor(r.id, p.id)}
+                        className="h-9 flex-1"
+                        placeholder="Strokes"
+                      />
+                      <Button type="submit" variant="ghost" size="sm">
+                        Save
+                      </Button>
+                    </form>
+                  ))}
+                </div>
+                {r.notes ? (
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    {r.notes}
+                  </p>
+                ) : null}
+              </CardContent>
+            </Card>
           ))}
           {(rounds ?? []).length === 0 && (
-            <p className="text-sm text-fairway-900/70">No rounds yet — add one above.</p>
+            <Card>
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                No rounds yet — add one above to get the boys on the board.
+              </CardContent>
+            </Card>
           )}
         </div>
       </section>
 
       {/* Airbnbs */}
-      <section className="card">
-        <h2 className="font-semibold text-fairway-700">🏠 Airbnbs</h2>
-        <form action={addAirbnb} className="mt-3 grid gap-3 md:grid-cols-6">
-          <input type="hidden" name="trip_id" value={trip.id} />
-          <div className="md:col-span-2">
-            <label className="label">Name</label>
-            <input name="name" required className="input" placeholder="The Pine House" />
-          </div>
-          <div className="md:col-span-2">
-            <label className="label">Address</label>
-            <input name="address" className="input" />
-          </div>
-          <div className="md:col-span-2">
-            <label className="label">Listing URL</label>
-            <input name="url" type="url" className="input" placeholder="https://airbnb.com/…" />
-          </div>
-          <div>
-            <label className="label">Check in</label>
-            <input name="check_in" type="date" className="input" />
-          </div>
-          <div>
-            <label className="label">Check out</label>
-            <input name="check_out" type="date" className="input" />
-          </div>
-          <div>
-            <label className="label">Total cost</label>
-            <input name="total_cost" type="number" step="0.01" className="input" />
-          </div>
-          <div className="md:col-span-2">
-            <label className="label">Notes</label>
-            <input name="notes" className="input" />
-          </div>
-          <div className="flex items-end">
-            <button className="btn w-full">Add stay</button>
-          </div>
-        </form>
+      <section className="space-y-4">
+        <SectionHeading
+          icon={Home}
+          title="Stays"
+          description="Where the crew is bunking down."
+        />
 
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          {(airbnbs ?? []).map((a: any) => (
-            <div key={a.id} className="rounded-lg border border-fairway-100 p-4">
-              <h3 className="font-semibold">{a.name}</h3>
-              <p className="text-xs text-fairway-900/70">{a.address}</p>
-              <p className="text-xs text-fairway-900/60 mt-1">
-                {a.check_in ?? "?"} → {a.check_out ?? "?"}
-                {a.total_cost ? ` · $${a.total_cost}` : ""}
-              </p>
-              {a.url && (
-                <a href={a.url} target="_blank" rel="noreferrer" className="text-xs text-fairway-700 underline">
-                  Open listing
-                </a>
-              )}
-              {a.notes && <p className="text-sm mt-2">{a.notes}</p>}
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Bets */}
-      <section className="card">
-        <h2 className="font-semibold text-fairway-700">💸 Side Bets</h2>
-        <form action={addBet} className="mt-3 grid gap-3 md:grid-cols-6">
-          <input type="hidden" name="trip_id" value={trip.id} />
-          <div className="md:col-span-3">
-            <label className="label">Description</label>
-            <input name="description" required className="input" placeholder="Closest to pin, hole 7" />
-          </div>
-          <div>
-            <label className="label">Amount ($)</label>
-            <input name="amount" type="number" step="0.01" className="input" />
-          </div>
-          <div className="md:col-span-2">
-            <label className="label">Round (optional)</label>
-            <select name="round_id" className="input">
-              <option value="">—</option>
-              {(rounds ?? []).map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.course_name} · {r.played_on}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="md:col-span-6">
-            <button className="btn">Propose bet</button>
-          </div>
-        </form>
-
-        <div className="mt-4 space-y-2">
-          {(bets ?? []).map((b) => {
-            const winner = memberProfiles.find((p) => p.id === b.winner_id);
-            return (
-              <div
-                key={b.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-fairway-100 p-3"
-              >
-                <div>
-                  <p className="font-medium">{b.description}</p>
-                  <p className="text-xs text-fairway-900/60">
-                    ${Number(b.amount).toFixed(2)} · {b.status}
-                    {winner ? ` · winner: ${winner.display_name}` : ""}
-                  </p>
-                </div>
-                {b.status === "open" && (
-                  <div className="flex items-center gap-2">
-                    <form action={settleBet} className="flex items-center gap-2">
-                      <input type="hidden" name="bet_id" value={b.id} />
-                      <input type="hidden" name="trip_id" value={trip.id} />
-                      <select name="winner_id" required className="input">
-                        <option value="">Pick winner</option>
-                        {memberProfiles.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.display_name}
-                          </option>
-                        ))}
-                      </select>
-                      <button className="btn">Settle</button>
-                    </form>
-                    <form action={cancelBet}>
-                      <input type="hidden" name="bet_id" value={b.id} />
-                      <input type="hidden" name="trip_id" value={trip.id} />
-                      <button className="btn-ghost">Cancel</button>
-                    </form>
-                  </div>
-                )}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Add a stay</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form
+              action={addAirbnb}
+              className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6"
+            >
+              <input type="hidden" name="trip_id" value={trip.id} />
+              <div className="space-y-1.5 lg:col-span-2">
+                <Label htmlFor="name">Name</Label>
+                <Input
+                  id="name"
+                  name="name"
+                  required
+                  placeholder="The Pine House"
+                />
               </div>
-            );
-          })}
-          {(bets ?? []).length === 0 && (
-            <p className="text-sm text-fairway-900/70">No bets yet — get gambling.</p>
+              <div className="space-y-1.5 lg:col-span-2">
+                <Label htmlFor="address">Address</Label>
+                <Input id="address" name="address" />
+              </div>
+              <div className="space-y-1.5 lg:col-span-2">
+                <Label htmlFor="url">Listing URL</Label>
+                <Input
+                  id="url"
+                  name="url"
+                  type="url"
+                  placeholder="https://airbnb.com/…"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="check_in">Check in</Label>
+                <Input id="check_in" name="check_in" type="date" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="check_out">Check out</Label>
+                <Input id="check_out" name="check_out" type="date" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="total_cost">Total cost</Label>
+                <Input
+                  id="total_cost"
+                  name="total_cost"
+                  type="number"
+                  step="0.01"
+                />
+              </div>
+              <div className="space-y-1.5 lg:col-span-2">
+                <Label htmlFor="airbnb_notes">Notes</Label>
+                <Input id="airbnb_notes" name="notes" />
+              </div>
+              <div className="flex items-end">
+                <Button className="w-full">Add stay</Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          {(airbnbs ?? []).map((a: any) => (
+            <Card key={a.id} className="transition-shadow hover:shadow-lift">
+              <CardHeader>
+                <CardTitle className="text-lg">{a.name}</CardTitle>
+                {a.address ? (
+                  <CardDescription>{a.address}</CardDescription>
+                ) : null}
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  {formatDate(a.check_in) ?? "?"} →{" "}
+                  {formatDate(a.check_out) ?? "?"}
+                </p>
+                {a.total_cost ? (
+                  <Badge variant="secondary">
+                    ${Number(a.total_cost).toFixed(2)} total
+                  </Badge>
+                ) : null}
+                {a.notes ? (
+                  <p className="text-sm text-foreground">{a.notes}</p>
+                ) : null}
+                {a.url ? (
+                  <a
+                    href={a.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-sm font-medium text-primary underline-offset-4 hover:underline"
+                  >
+                    Open listing
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                ) : null}
+              </CardContent>
+            </Card>
+          ))}
+          {(airbnbs ?? []).length === 0 && (
+            <Card className="sm:col-span-2">
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                No stays added yet.
+              </CardContent>
+            </Card>
           )}
         </div>
       </section>
 
-      {/* Roster */}
-      <section className="card">
-        <h2 className="font-semibold text-fairway-700">👥 Players</h2>
-        <ul className="mt-3 grid gap-1 md:grid-cols-3 text-sm">
-          {memberProfiles.map((p) => (
-            <li key={p.id} className="rounded border border-fairway-100 px-3 py-2">
-              {p.display_name}
-            </li>
+      {/* Side Bets */}
+      <section className="space-y-4">
+        <SectionHeading
+          icon={DollarSign}
+          title="Side Bets"
+          description="Propose a wager, settle up after the round."
+        />
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Propose a bet</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form
+              action={addBet}
+              className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6"
+            >
+              <input type="hidden" name="trip_id" value={trip.id} />
+              <div className="space-y-1.5 lg:col-span-3">
+                <Label htmlFor="description">Description</Label>
+                <Input
+                  id="description"
+                  name="description"
+                  required
+                  placeholder="Closest to pin, hole 7"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="amount">Amount ($)</Label>
+                <Input id="amount" name="amount" type="number" step="0.01" />
+              </div>
+              <div className="space-y-1.5 lg:col-span-2">
+                <Label htmlFor="bet_round_id">Round (optional)</Label>
+                <select
+                  id="bet_round_id"
+                  name="round_id"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <option value="">—</option>
+                  {(rounds ?? []).map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.course_name} · {formatDate(r.played_on) ?? r.played_on}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-end lg:col-span-6">
+                <Button>Propose bet</Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+
+        <div className="space-y-3">
+          {(bets ?? []).map((b) => {
+            const winner = roster.find((p) => p.id === b.winner_id);
+            const status = (b.status ?? "open") as string;
+            return (
+              <Card key={b.id}>
+                <CardContent className="flex flex-wrap items-center justify-between gap-4 py-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium">{b.description}</p>
+                      <Badge variant={betStatusVariant[status] ?? "outline"}>
+                        {status}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      ${Number(b.amount).toFixed(2)}
+                      {winner ? ` · winner: ${winner.display_name}` : ""}
+                    </p>
+                  </div>
+                  {status === "open" && (
+                    <div className="flex flex-wrap items-end gap-2">
+                      <form
+                        action={settleBet}
+                        className="flex items-end gap-2"
+                      >
+                        <input type="hidden" name="bet_id" value={b.id} />
+                        <input type="hidden" name="trip_id" value={trip.id} />
+                        <select
+                          name="winner_id"
+                          required
+                          className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          <option value="">Pick winner</option>
+                          {roster.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.display_name}
+                            </option>
+                          ))}
+                        </select>
+                        <Button type="submit" size="sm">
+                          Settle
+                        </Button>
+                      </form>
+                      <form action={cancelBet}>
+                        <input type="hidden" name="bet_id" value={b.id} />
+                        <input type="hidden" name="trip_id" value={trip.id} />
+                        <Button type="submit" variant="ghost" size="sm">
+                          Cancel
+                        </Button>
+                      </form>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+          {(bets ?? []).length === 0 && (
+            <Card>
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                No bets yet — get gambling.
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </section>
+
+      {/* Players roster */}
+      <section className="space-y-4">
+        <SectionHeading
+          icon={Users}
+          title="Players"
+          description="Set each player's per-trip handicap for net scoring."
+        />
+
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {roster.map((p) => (
+            <Card key={p.id} className="transition-shadow hover:shadow-lift">
+              <CardContent className="space-y-3 py-4">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-medium">{p.display_name}</p>
+                  {p.role ? (
+                    <Badge variant="outline">{p.role}</Badge>
+                  ) : null}
+                </div>
+                <form
+                  action={setHandicap}
+                  className="flex items-end gap-2"
+                >
+                  <input type="hidden" name="trip_id" value={trip.id} />
+                  <input type="hidden" name="profile_id" value={p.id} />
+                  <div className="flex-1 space-y-1.5">
+                    <Label htmlFor={`handicap-${p.id}`}>Handicap</Label>
+                    <Input
+                      id={`handicap-${p.id}`}
+                      name="handicap"
+                      type="number"
+                      step="0.1"
+                      defaultValue={p.handicap ?? ""}
+                      className="h-9"
+                      placeholder="0"
+                    />
+                  </div>
+                  <Button type="submit" variant="outline" size="sm">
+                    Save
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
           ))}
-        </ul>
-        <p className="mt-3 text-xs text-fairway-900/60">
-          Trip ID: <code>{trip.id}</code> — share this with the boys, they sign in and the
-          organizer adds them in the SQL editor (or share the join link below for self-serve).
-        </p>
-        <p className="mt-1 text-xs text-fairway-900/60">
-          Join link:{" "}
-          <code className="break-all">
-            {process.env.NEXT_PUBLIC_SITE_URL ?? ""}/trips/{trip.id}
-          </code>
-        </p>
+        </div>
+
+        <Card>
+          <CardContent className="space-y-2 py-4 text-xs text-muted-foreground">
+            <p>
+              Trip ID: <code className="text-foreground">{trip.id}</code> —
+              share this with the boys so they can sign in and join.
+            </p>
+            <p>
+              Join link:{" "}
+              <code className="break-all text-foreground">
+                {process.env.NEXT_PUBLIC_SITE_URL ?? ""}/trips/{trip.id}
+              </code>
+            </p>
+          </CardContent>
+        </Card>
       </section>
     </div>
   );

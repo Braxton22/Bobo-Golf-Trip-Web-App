@@ -1,8 +1,24 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { Inter, Cormorant_Garamond } from "next/font/google";
 import "./globals.css";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "./actions";
+import { ThemeProvider } from "@/components/theme-provider";
+import { SiteHeader } from "@/components/layout/site-header";
+import { SiteFooter } from "@/components/layout/site-footer";
+
+const sans = Inter({
+  subsets: ["latin"],
+  variable: "--font-sans",
+  display: "swap",
+});
+
+const serif = Cormorant_Garamond({
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+  variable: "--font-serif",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Bobo Golf Trip",
@@ -14,29 +30,17 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const { data: { user } } = await supabase.auth.getUser();
 
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning className={`${sans.variable} ${serif.variable}`}>
       <body>
-        <header className="border-b border-fairway-100 bg-white">
-          <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-            <Link href="/" className="text-lg font-bold text-fairway-700">
-              ⛳ Bobo Golf Trip
-            </Link>
-            <nav className="flex items-center gap-4 text-sm">
-              {user ? (
-                <>
-                  <Link href="/trips" className="hover:text-fairway-700">Trips</Link>
-                  <Link href="/bets" className="hover:text-fairway-700">Bets</Link>
-                  <form action={signOut}>
-                    <button className="btn-ghost" type="submit">Sign out</button>
-                  </form>
-                </>
-              ) : (
-                <Link href="/login" className="btn">Sign in</Link>
-              )}
-            </nav>
+        <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
+          <div className="flex min-h-screen flex-col bg-background">
+            <SiteHeader isSignedIn={!!user} signOut={signOut} />
+            <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-10 sm:px-6 animate-fade-in">
+              {children}
+            </main>
+            <SiteFooter />
           </div>
-        </header>
-        <main className="mx-auto max-w-5xl px-4 py-8">{children}</main>
+        </ThemeProvider>
       </body>
     </html>
   );

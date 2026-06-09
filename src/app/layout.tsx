@@ -53,9 +53,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  // Trip-scoped admin status comes from RLS once a trip is selected; here we
-  // simply gate the Admin tab to authenticated users for now. A future pass
-  // will swap this to "is admin of the active trip".
+  // Admin tab is visible to any signed-in user so brand-new users can create
+  // their first trip. Trip-scoped policies + per-page checks enforce real access.
   const isAdmin = !!user;
 
   return (

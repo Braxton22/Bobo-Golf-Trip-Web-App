@@ -2,9 +2,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { getActiveTrip } from "@/lib/trip-context";
+import { getActiveTrip, isTripAdmin } from "@/lib/trip-context";
 import type { Hole, Match, Player, Round, Score, Team } from "@/lib/db";
 import { ScoreEntry } from "./score-entry";
+import { MatchLiveSync } from "./live-sync";
 
 type PageProps = { params: Promise<{ matchId: string }> };
 
@@ -65,6 +66,7 @@ export default async function MatchScorePage({ params }: PageProps) {
       : match.side_b.includes(myPlayer.id)
         ? "B"
         : null;
+  const adminOfTrip = await isTripAdmin(trip.id);
 
   return (
     <div className="space-y-4">
@@ -87,7 +89,9 @@ export default async function MatchScorePage({ params }: PageProps) {
           Course holes haven't been configured yet. Ask the admin to fill in par + stroke index.
         </p>
       ) : (
-        <ScoreEntry
+        <>
+          <MatchLiveSync matchId={match.id} />
+          <ScoreEntry
           round={{ id: round.id, format: round.format }}
           match={{
             id: match.id,
@@ -97,6 +101,7 @@ export default async function MatchScorePage({ params }: PageProps) {
             team_b_name: teamBName,
           }}
           mySide={mySide}
+          isAdmin={adminOfTrip}
           players={players.map((p) => ({
             id: p.id,
             name: p.name,
@@ -115,6 +120,7 @@ export default async function MatchScorePage({ params }: PageProps) {
             gross: s.gross,
           }))}
         />
+        </>
       )}
     </div>
   );

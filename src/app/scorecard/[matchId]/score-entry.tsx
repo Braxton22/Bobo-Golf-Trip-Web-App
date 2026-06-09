@@ -27,6 +27,7 @@ type Props = {
     team_b_name: string;
   };
   mySide: "A" | "B" | null;
+  isAdmin: boolean;
   players: SidePlayer[];
   holes: Hole[];
   initialScores: { hole_number: number; player_id: string | null; team_side: "A" | "B" | null; gross: number }[];
@@ -127,7 +128,7 @@ function SyncDot({ status }: { status: SyncIndicator }) {
 // Main component
 // ---------------------------------------------------------------------------
 
-export function ScoreEntry({ round, match, mySide, players, holes, initialScores }: Props) {
+export function ScoreEntry({ round, match, mySide, isAdmin, players, holes, initialScores }: Props) {
   // Local optimistic score state keyed by `${who}|${hole_number}` so we can
   // render instantly and reconcile against the queue later.
   const [scores, setScores] = useState(() => {
@@ -236,6 +237,7 @@ export function ScoreEntry({ round, match, mySide, players, holes, initialScores
           holes={holes}
           match={match}
           mySide={mySide}
+          isAdmin={isAdmin}
           scores={scores}
           statusFor={statusFor}
           writeHole={writeHole}
@@ -414,6 +416,7 @@ function ScrambleEntry({
   holes,
   match,
   mySide,
+  isAdmin,
   scores,
   statusFor,
   writeHole,
@@ -421,49 +424,65 @@ function ScrambleEntry({
   holes: Hole[];
   match: Props["match"];
   mySide: "A" | "B" | null;
+  isAdmin: boolean;
   scores: Map<string, number>;
   statusFor: (k: string) => SyncIndicator;
   writeHole: WriteHole;
 }) {
-  // When a user IS on a side, render only their side for entry; otherwise show
-  // both so a non-playing admin can keep score. Either way both sides feed the
-  // header summary.
-  const writableSide: ("A" | "B")[] = mySide ? [mySide] : ["A", "B"];
+  // Writable sides:
+  //   - on a side → only your side
+  //   - admin (no side) → both
+  //   - bystander → neither (read-only view of both)
+  // The opposing side renders as read-only so partners can watch live opponent
+  // scores without being able to post for them. RLS rejects mismatched writes
+  // even if the UI is bypassed.
+  const writableSides = new Set<"A" | "B">(
+    mySide ? [mySide] : isAdmin ? ["A", "B"] : []
+  );
 
   return (
     <section className="space-y-3">
       <h2 className="label">Team scores per hole</h2>
-      {writableSide.map((side) => (
-        <article key={side} className="card space-y-2">
-          <header className="flex items-center justify-between">
-            <h3 className="font-medium">
-              {side === "A" ? match.team_a_name : match.team_b_name}{" "}
-              <span className="text-xs text-muted-foreground">(team gross)</span>
-            </h3>
-          </header>
-          <ul className="divide-y divide-line">
-            {holes.map((h) => {
-              const k = `team:${side}|${h.hole_number}`;
-              return (
-                <HoleRow
-                  key={k}
-                  hole={h}
-                  value={scores.get(k) ?? null}
-                  status={statusFor(k)}
-                  onChange={(gross) =>
-                    writeHole({
-                      player_id: null,
-                      team_side: side,
-                      hole_number: h.hole_number,
-                      gross,
-                    })
-                  }
-                />
-              );
-            })}
-          </ul>
-        </article>
-      ))}
+      {(["A", "B"] as const).map((side) => {
+        const canWrite = writableSides.has(side);
+        return (
+          <article key={side} className="card space-y-2">
+            <header className="flex items-center justify-between">
+              <h3 className="font-medium">
+                {side === "A" ? match.team_a_name : match.team_b_name}{" "}
+                <span className="text-xs text-muted-foreground">
+                  {canWrite ? "(team gross)" : "(read-only · opponent)"}
+                </span>
+              </h3>
+            </header>
+            <ul className="divide-y divide-line">
+              {holes.map((h) => {
+                const k = `team:${side}|${h.hole_number}`;
+                return (
+                  <HoleRow
+                    key={k}
+                    hole={h}
+                    value={scores.get(k) ?? null}
+                    status={canWrite ? statusFor(k) : "saved"}
+                    readOnly={!canWrite}
+                    onChange={
+                      canWrite
+                        ? (gross) =>
+                            writeHole({
+                              player_id: null,
+                              team_side: side,
+                              hole_number: h.hole_number,
+                              gross,
+                            })
+                        : () => undefined
+                    }
+                  />
+                );
+              })}
+            </ul>
+          </article>
+        );
+      })}
     </section>
   );
 }
@@ -616,12 +635,14 @@ function HoleRow({
   value,
   strokesReceived = 0,
   status,
+  readOnly = false,
   onChange,
 }: {
   hole: Hole;
   value: number | null;
   strokesReceived?: number;
   status: SyncIndicator;
+  readOnly?: boolean;
   onChange: (gross: number | null) => void;
 }) {
   const net = value != null ? value - strokesReceived : null;
@@ -643,12 +664,18 @@ function HoleRow({
         )}
       </div>
       <div className="ml-auto flex flex-col items-end gap-1">
-        <Stepper value={value} onChange={onChange} ariaLabel={`Hole ${hole.hole_number} gross`} />
+        {readOnly ? (
+          <span className="h-11 inline-flex items-center px-2 text-lg font-semibold tabular-nums text-muted-foreground">
+            {value ?? "—"}
+          </span>
+        ) : (
+          <Stepper value={value} onChange={onChange} ariaLabel={`Hole ${hole.hole_number} gross`} />
+        )}
         <div className="flex items-center gap-2">
           {net != null && (
             <span className="text-[11px] text-muted-foreground">net {net}</span>
           )}
-          <SyncDot status={status} />
+          {!readOnly && <SyncDot status={status} />}
         </div>
       </div>
     </li>

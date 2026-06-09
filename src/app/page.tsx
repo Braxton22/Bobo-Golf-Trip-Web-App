@@ -1,17 +1,7 @@
-import { MapPin } from "lucide-react";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { Flag, Trophy, Smartphone, Wallet } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { computeLeaderboard } from "@/lib/scoring";
-import { Leaderboard } from "@/components/leaderboard";
-import { RealtimeRefresher } from "@/components/realtime-refresher";
-import { Hero } from "@/components/home/Hero";
-import { FeatureCards } from "@/components/home/FeatureCards";
-import { SignInBanner } from "@/components/home/SignInBanner";
-
-type MemberRow = {
-  profile_id: string;
-  handicap: number | null;
-  profiles: { id: string; display_name: string | null } | { id: string; display_name: string | null }[] | null;
-};
 
 export default async function Home() {
   const supabase = await createClient();
@@ -19,92 +9,72 @@ export default async function Home() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // The most recent trip visible to this viewer (RLS handles signed-in vs public).
-  const { data: trips } = await supabase
-    .from("trips")
-    .select("id, name, location, starts_on, created_at")
-    .order("starts_on", { ascending: false, nullsFirst: false })
-    .order("created_at", { ascending: false })
-    .limit(1);
-
-  const trip = trips?.[0] ?? null;
-
-  let rows: ReturnType<typeof computeLeaderboard> = [];
-
-  if (trip) {
-    const [membersRes, roundsRes] = await Promise.all([
-      supabase
-        .from("trip_members")
-        .select("profile_id, handicap, profiles(id, display_name)")
-        .eq("trip_id", trip.id),
-      supabase.from("rounds").select("id, par").eq("trip_id", trip.id),
-    ]);
-
-    const memberData = (membersRes.data ?? []) as MemberRow[];
-    const rounds = (roundsRes.data ?? []).map((r) => ({
-      id: r.id as string,
-      par: r.par as number | null,
-    }));
-
-    const members = memberData.map((m) => {
-      const profile = Array.isArray(m.profiles) ? m.profiles[0] : m.profiles;
-      return {
-        id: m.profile_id,
-        display_name: profile?.display_name ?? "Unknown player",
-        handicap: m.handicap,
-      };
-    });
-
-    let scores: { round_id: string; profile_id: string; total_strokes: number | null }[] = [];
-    if (rounds.length > 0) {
-      const { data: scoreData } = await supabase
-        .from("scores")
-        .select("round_id, profile_id, total_strokes")
-        .in(
-          "round_id",
-          rounds.map((r) => r.id)
-        );
-      scores = (scoreData ?? []).map((s) => ({
-        round_id: s.round_id as string,
-        profile_id: s.profile_id as string,
-        total_strokes: s.total_strokes as number | null,
-      }));
-    }
-
-    rows = computeLeaderboard(members, rounds, scores);
-  }
+  // Signed in → straight to the live board. The bottom tabs handle the rest.
+  if (user) redirect("/leaderboard");
 
   return (
-    <div className="space-y-20 pb-20">
-      <Hero signedIn={Boolean(user)} />
+    <div className="space-y-10 pt-6 pb-12">
+      <section className="text-center space-y-4">
+        <div className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-soft">
+          <Flag className="h-6 w-6" />
+        </div>
+        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
+          A Ryder Cup for the boys
+        </p>
+        <h1 className="font-serif text-4xl font-semibold leading-tight sm:text-5xl">
+          Three days.<br />
+          Two teams.<br />
+          One cup.
+        </h1>
+        <p className="mx-auto max-w-md text-sm text-muted-foreground">
+          Live net leaderboards, scramble + best-ball + singles match play, side bets settled on
+          Venmo — all in one phone-first app for the annual trip.
+        </p>
+        <div className="flex flex-col items-center gap-2 pt-2">
+          <Link href="/login" className="btn w-full max-w-xs">
+            Sign in with magic link
+          </Link>
+          <p className="text-xs text-muted-foreground">Have a join code? Sign in then visit /join/&lt;code&gt;.</p>
+        </div>
+      </section>
 
-      {trip && (
-        <section className="px-6">
-          <div className="mx-auto max-w-2xl space-y-6">
-            <header className="text-center">
-              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-muted-foreground">
-                Live Net Standings
-              </p>
-              <h2 className="mt-2 font-serif text-3xl font-semibold tracking-tight text-foreground">
-                {trip.name}
-              </h2>
-              {trip.location && (
-                <p className="mt-1 inline-flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
-                  <MapPin className="h-3.5 w-3.5" />
-                  {trip.location}
-                </p>
-              )}
-            </header>
-
-            <Leaderboard rows={rows} live />
-
-            {!user && <SignInBanner />}
-          </div>
-          <RealtimeRefresher />
-        </section>
-      )}
-
-      <FeatureCards />
+      <ul className="grid gap-3 sm:grid-cols-3">
+        <FeatureCard
+          icon={Trophy}
+          title="12 points, 6½ to win"
+          blurb="3 scramble + 3 best-ball + 6 singles, all 1-point matches. Cup standings update live."
+        />
+        <FeatureCard
+          icon={Smartphone}
+          title="Score per hole, offline"
+          blurb="Big steppers, net auto-computed from your handicap and the stroke index. Survives dead zones."
+        />
+        <FeatureCard
+          icon={Wallet}
+          title="Venmo settle-up"
+          blurb="Track every side bet; one-tap Venmo links and a simplified end-of-trip plan."
+        />
+      </ul>
     </div>
+  );
+}
+
+function FeatureCard({
+  icon: Icon,
+  title,
+  blurb,
+}: {
+  icon: typeof Flag;
+  title: string;
+  blurb: string;
+}) {
+  return (
+    <li className="card">
+      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+        <Icon className="h-5 w-5" />
+      </div>
+      <h2 className="mt-3 font-serif text-lg font-semibold">{title}</h2>
+      <p className="mt-1 text-sm text-muted-foreground">{blurb}</p>
+    </li>
   );
 }

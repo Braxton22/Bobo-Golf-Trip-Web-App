@@ -14,8 +14,10 @@ type SiteHeaderProps = {
 };
 
 const NAV_LINKS = [
-  { href: "/trips", label: "Trips" },
+  { href: "/leaderboard", label: "Leaderboard" },
+  { href: "/scorecard", label: "Scorecard" },
   { href: "/bets", label: "Bets" },
+  { href: "/admin", label: "Admin" },
 ];
 
 export function SiteHeader({ isSignedIn, signOut }: SiteHeaderProps) {

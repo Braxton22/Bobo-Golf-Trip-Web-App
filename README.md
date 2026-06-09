@@ -1,166 +1,189 @@
-# ⛳ Bobo Golf Trip Web App
+# Bobo Golf Trip
 
-A Next.js + Supabase app for the boys' annual golf trip. Built to deploy on
-Vercel.
+A mobile-first, Augusta-inspired PWA for our annual Ryder-Cup-style golf trip.
+Two teams, three days, twelve points, 6½ wins the cup.
 
-**Features**
+## What's in it
 
-- Magic-link sign-in (Supabase Auth)
-- Trips with roster, dates, and location
-- Rounds with per-player scoring + a per-trip leaderboard
-- Airbnbs: name, address, dates, cost, listing URL, notes
-- Side bets: propose, settle, cancel — across the whole trip or tied to a round
-- Row-level security so only trip members see trip data
+- **Live leaderboards** — net round board (red-for-under, classic Masters
+  styling) plus the running Cup scoreline ("6½ – 5½"), updating within ~1s via
+  Supabase Realtime.
+- **Per-hole scoring** for the three day formats:
+  - Day 1 — **Scramble** (2-man, team handicap diff allocated by SI)
+  - Day 2 — **Best Ball + Bonus** (best net, with a −1 bonus when both
+    partners make net par-or-better)
+  - Day 3 — **Singles** (1v1, full handicap by SI)
+- **Offline-tolerant score entry** — IndexedDB queue, per-row sync indicator,
+  auto-flush on reconnect. Steppers with 44 px tap targets.
+- **Bets** — match, longest drive, closest to pin, hole-score, low-net,
+  skins, other. One-tap Venmo deep links and a **smart settle-up** view that
+  greedily simplifies who-pays-whom into the fewest transfers.
+- **Activity feed** — birdies, eagles, in-progress matches, decided matches,
+  bets created/settled, all live via Realtime.
+- **Trip info** — course (par + SI + per-tee yardages), lodging (address,
+  code, WiFi), and a 3-day weather forecast (Open-Meteo, no key needed).
+- **Photo gallery** — per-trip Supabase Storage bucket with signed URLs and
+  RLS scoped by trip membership.
+- **End-of-trip recap** — final scoreline, MVP, biggest bet winner, lowest
+  net round, most birdies; share via the Web Share API.
+- **PWA** — installable, themed splash, service worker shell cache.
 
 ## Stack
 
-- Next.js 15 (App Router) + React + TypeScript
-- Tailwind CSS
-- Supabase (Postgres + Auth) via `@supabase/ssr`
-- Deployed on Vercel
+- Next.js 15 (App Router) + React 19 + TypeScript
+- Tailwind CSS + custom HSL token layer (Augusta cream/green/gold)
+- Supabase: Postgres + Auth (magic link) + Realtime + Storage
+- Vercel hosting
 
----
+## Setup (~10 minutes)
 
-## One-time setup (~10 minutes)
+### 1. Create a Supabase project
 
-### 1. Create your Supabase project
+1. <https://supabase.com> → **New project**.
+2. Wait for it to provision (~1 min).
+3. Copy `Project URL` and the anon public key from **Project Settings → API**.
 
-1. Go to <https://supabase.com> → sign in → **New project**.
-2. Pick a name (e.g. `bobo-golf`), set a DB password, choose a region close to
-   you.
-3. Wait for it to provision (~1 min).
+### 2. Run the migrations
 
-### 2. Run the SQL migration
+In the Supabase dashboard, open **SQL Editor → New query** and run the files
+under `/supabase/migrations` **in order**:
 
-1. In the Supabase dashboard, open **SQL Editor → New query**.
-2. Paste the entire contents of [`supabase/migrations/0001_init.sql`](./supabase/migrations/0001_init.sql).
-3. Click **Run**. You should see `Success. No rows returned.`
+1. `0001_init.sql`
+2. `0002_premium.sql`
+3. `0003_ryder_cup.sql` — **destructive**: drops the legacy v1 tables and
+   builds the full Ryder Cup schema (trips, teams, courses/holes/tees/yardages,
+   players, rounds, matches, per-hole scores, bets + participants,
+   activity_events, photos, lodging). Includes RLS and Realtime publication.
+4. `0004_photos_storage.sql` — creates the `trip-photos` Storage bucket and
+   its RLS policies.
 
-This creates the `profiles`, `trips`, `trip_members`, `airbnbs`, `rounds`,
-`scores`, and `bets` tables, plus row-level-security policies and a trigger
-that creates a profile row on signup.
+### 3. Configure auth redirect URLs
 
-### 3. Grab your Supabase API keys
+**Authentication → URL Configuration**:
 
-In the dashboard:
+- **Site URL**: your Vercel URL (e.g. `https://bobo-golf.vercel.app`)
+- **Additional redirect URLs**: `http://localhost:3000/auth/callback` and your
+  Vercel URL.
 
-- **Project Settings → API**
-  - `Project URL` → goes into `NEXT_PUBLIC_SUPABASE_URL`
-  - `anon public` key → goes into `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-
-### 4. Configure Auth redirect URLs
-
-In the dashboard:
-
-- **Authentication → URL Configuration**
-  - Site URL: your Vercel URL once you have it, e.g.
-    `https://bobo-golf.vercel.app`
-  - Additional redirect URLs: add `http://localhost:3000/auth/callback` and
-    `https://YOUR-VERCEL-URL/auth/callback`
-
-(Email is enabled by default. Magic links work out of the box on the free tier.)
-
-### 5. Push this repo to GitHub
+### 4. Local dev
 
 ```bash
-git remote add origin git@github.com:YOUR-USERNAME/Bobo-Golf-Trip-Web-App.git
-git push -u origin main
-```
-
-### 6. Deploy on Vercel
-
-1. Go to <https://vercel.com> → **Add New… → Project**.
-2. Import the GitHub repo.
-3. Framework preset: **Next.js** (auto-detected).
-4. Under **Environment Variables**, add:
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `NEXT_PUBLIC_SITE_URL` → your Vercel URL (e.g. `https://bobo-golf.vercel.app`)
-5. **Deploy**.
-
-Every push to `main` redeploys automatically.
-
----
-
-## Local development
-
-```bash
-cp .env.example .env.local   # fill in the values from step 3
+cp .env.example .env.local      # fill in the Supabase values
 npm install
-npm run dev                  # http://localhost:3000
+npm run dev                     # http://localhost:3000
+npm run test                    # 37 unit tests (scoring engine + venmo)
+npm run build                   # production build
 ```
 
-Sign in with magic link → check your email → you'll land on `/trips`.
+### 5. Deploy on Vercel
 
----
+1. <https://vercel.com> → **Import Project** → pick this repo.
+2. Add env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+   `NEXT_PUBLIC_SITE_URL` (= your Vercel URL).
+3. Deploy.
 
 ## How the trip flow works
 
-1. **Sign in** — magic link to email. A `profiles` row is created
-   automatically (display name defaults to the part of your email before `@`).
-2. **Create a trip** at `/trips`. You become the organizer.
-3. **Add the boys**: each one signs in, then either you share the join link
-   (`/trips/<id>`) and they hit "Join trip", or you add their profile IDs in
-   Supabase Table Editor → `trip_members`.
-4. **Log rounds**: add a course + date, then enter each player's strokes.
-5. **Track bets**: propose a side bet (any amount, any description), settle it
-   by picking a winner when the round's done.
+1. **Admin** signs in, creates a trip at `/admin/trips`. A join code is
+   generated, two starter teams ("Pine" and "Sand") are auto-seeded, and the
+   trip becomes active.
+2. **Admin** fills in the course at `/admin/course` (18 holes seed to a par-72
+   layout you can tweak), adds tees + yardages, lodging, and rounds.
+3. **Admin** opens `/admin/rounds`, taps "Bootstrap the 3 days", then sets
+   dates and pairings (3 scramble pairs, 3 best-ball pairs, 6 singles).
+4. **Players** sign in and visit `/join/<code>` to set their name, handicap
+   index, tee, and Venmo username.
+5. **During play** — `/scorecard` lists the matches each player is in;
+   tapping one opens the per-hole stepper. Scores save instantly; offline
+   entries queue and sync on reconnect.
+6. **Live** — `/leaderboard` shows the Cup standings + per-day net board,
+   updating in real time as scores roll in.
+7. **Bets** — anyone can propose at `/bets/new`; settle them later; pay each
+   other via Venmo deep links; end-of-trip settle-up at `/bets/settle-up`.
+8. **Recap** — when the cup is decided, a link surfaces on the leaderboard
+   pointing at `/recap` — MVP, biggest bet winner, lowest net round, share.
 
----
-
-## Where to add features next
-
-The schema and RLS give you a lot to build on. Easy wins:
-
-- **Hole-by-hole scoring**: add a `hole_scores` table (`score_id, hole, strokes`)
-  and a 9/18-hole grid input.
-- **Skins / Nassau / Wolf**: the `bets` table is intentionally generic —
-  formalize specific game types as separate tables or as a `type` column.
-- **Photo gallery per trip**: Supabase Storage bucket + a `trip_photos` table.
-- **Payments tally**: a `/settle-up` view that sums settled bets by winner and
-  shows who owes whom.
-- **iCal export** for the trip dates.
-- **Push notifications** when a round is added or a bet is settled (Supabase
-  Realtime → service worker).
-
----
-
-## File map
+## Project map
 
 ```
 src/
   app/
-    layout.tsx              # header, auth-aware nav
-    page.tsx                # landing page
-    actions.ts              # signOut server action
-    login/page.tsx          # magic-link form
-    auth/callback/route.ts  # exchanges the code for a session
-    trips/
-      page.tsx              # list + create
-      actions.ts            # all server actions (trips, rounds, bets, scores, airbnbs)
-      [id]/page.tsx         # trip detail: leaderboard, rounds, airbnbs, bets, roster
-    bets/page.tsx           # all bets across your trips
-    not-found.tsx
-  lib/supabase/
-    client.ts               # browser client
-    server.ts               # server component / action client
-    middleware.ts           # session refresh + auth gate
-  middleware.ts             # mount the auth gate
-supabase/
-  migrations/0001_init.sql  # schema + RLS — run this in Supabase SQL editor
+    layout.tsx                # root layout: header + bottom tabs + PWA register
+    page.tsx                  # marketing landing (signed-out) → /leaderboard
+    login/                    # magic-link sign in
+    auth/callback/            # OAuth-style code exchange
+    leaderboard/              # cup standings + day selector + net board
+    scorecard/                # match list + per-hole entry (offline)
+    bets/                     # bets list, new, detail (Venmo), settle-up
+    feed/                     # live activity feed
+    info/                     # course, lodging, weather
+    photos/                   # gallery + uploader
+    recap/                    # end-of-trip recap
+    admin/                    # trips, teams, players, course, lodging, rounds
+    join/[code]/              # player self-onboarding
+  components/
+    layout/                   # site header + bottom tab bar
+    admin/                    # section/field/form primitives
+    ...
+  lib/
+    scoring/                  # PURE: handicap, formats, match play, leaderboard
+      __tests__/              # 28 unit tests including spec §6 worked examples
+    score-queue.ts            # IndexedDB offline write queue
+    venmo.ts                  # deep links + debt simplification
+    __tests__/venmo.test.ts   # 9 unit tests
+    trip-context.ts           # active-trip cookie + admin helpers
+    weather.ts                # Open-Meteo fetcher (30-min revalidate)
+    db.ts                     # hand-rolled row types
+    supabase/                 # browser/server/middleware clients
+supabase/migrations/
+  0001_init.sql               # legacy schema (kept for ordering)
+  0002_premium.sql            # legacy additions
+  0003_ryder_cup.sql          # FULL Ryder Cup schema + RLS + Realtime
+  0004_photos_storage.sql     # Storage bucket + policies
+public/
+  manifest.webmanifest        # PWA manifest
+  sw.js                       # network-first HTML, cache-first assets
+  icon.svg                    # placeholder icon (replace 192/512 PNGs for install)
 ```
 
----
+## Scoring rules (the heart of the app)
 
-## Notes on MCP
+All formulas live in `/src/lib/scoring`, are pure, and have unit tests.
 
-This project doesn't require any Model-Context-Protocol setup to use, but if
-you want Claude to manage data through MCP later:
+**Handicap (simple mode, default):** `courseHandicap = round(HandicapIndex)`.
+Strokes are allocated by stroke index: 1 stroke on every hole with `SI ≤ N`;
+a 2nd stroke on holes with `SI ≤ N − 18` when `N > 18`.
 
-- **Supabase MCP server**: <https://github.com/supabase-community/supabase-mcp>
-  lets Claude query your DB.
-- **Vercel MCP server**: <https://github.com/vercel-labs/mcp-for-next.js>
-  exposes Vercel deploy info.
+**Scramble (Day 1):**
 
-Add either to your `~/.claude.json` or `.mcp.json` and Claude can read/write
-the project directly from the chat.
+```
+teamCH = round(0.35 * round(lowIdx) + 0.15 * round(highIdx))
+diff = |teamA_CH − teamB_CH|
+```
+
+Lower team plays scratch; higher team receives `diff` strokes by SI. Team
+enters one gross per hole; net per-hole drives match play.
+
+**Best Ball + Bonus (Day 2):**
+
+```
+teamHoleScore = min(partnerA_net, partnerB_net)
+if (partnerA_net ≤ par AND partnerB_net ≤ par) teamHoleScore −= 1
+```
+
+**Singles (Day 3):** each player receives full strokes by SI; compare net per
+hole for match play.
+
+**Match play:** each match is worth 1 point; win = 1, halve = 0.5/0.5,
+loss = 0. Sum per team for Cup standings. 6.5 wins of 12 by default; ties
+use the trip's `tie_outcome_label`.
+
+## Notes
+
+- The Venmo deep link spec is best-effort — amount prefill is unreliable on
+  some clients, so the UI always shows the amount alongside the link.
+- Storage bucket is private; URLs in the gallery are signed for 1 hour.
+- Weather defers gracefully to "no forecast" when offline or Open-Meteo is
+  unreachable.
+- Icons are SVG-only by default; for full PWA install, drop
+  `/public/icon-192.png` and `/public/icon-512.png` in place.

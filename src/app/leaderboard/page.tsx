@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { Trophy } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveTrip } from "@/lib/trip-context";
 import {
@@ -119,6 +120,15 @@ export default async function LeaderboardPage(props: { searchParams: Promise<{ d
           <TeamScore name={teamB?.name ?? "Team B"} points={cup.teamBPoints} highlight={cup.winner === "B"} />
         </div>
         <p className="text-xs text-muted-foreground">{cup.scoreline}</p>
+        {(cup.status === "decided" || cup.status === "tie") && (
+          <Link
+            href="/recap"
+            className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--gold))]/15 px-3 py-1.5 text-xs font-medium text-[hsl(var(--ink))]"
+          >
+            <Trophy className="h-3.5 w-3.5" />
+            Open the recap →
+          </Link>
+        )}
       </section>
 
       {/* Day selector -------------------------------------------------- */}

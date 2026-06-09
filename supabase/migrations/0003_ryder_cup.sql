@@ -244,9 +244,11 @@ create table public.lodging (
 -- Helper: predicate function used by every policy below.
 -- Drop first in case a previous attempt left these functions with a different
 -- parameter name — `create or replace` can change the body but not parameter
--- names, so a stale signature would error with 42P13.
-drop function if exists public.is_trip_member(uuid);
-drop function if exists public.is_trip_admin(uuid);
+-- names, so a stale signature would error with 42P13. CASCADE also drops any
+-- legacy policies that referenced the old signature (the legacy tables those
+-- policies were attached to are dropped in section 0 above anyway).
+drop function if exists public.is_trip_member(uuid) cascade;
+drop function if exists public.is_trip_admin(uuid) cascade;
 
 create or replace function public.is_trip_member(p_trip_id uuid)
 returns boolean

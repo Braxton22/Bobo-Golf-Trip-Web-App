@@ -2,32 +2,57 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ---------------------------------------------------------------------------
+   Design tokens — Augusta-inspired + Apple HIG. See spec §4.
+   Stored as HSL channels so they compose with tailwind utilities like
+   `bg-background/80` and `text-foreground/60`.
+   --------------------------------------------------------------------------- */
 @layer base {
   :root {
-    --background: 48 33% 96%;
-    --foreground: 156 32% 11%;
-    --card: 0 0% 100%;
-    --card-foreground: 156 32% 11%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 156 32% 11%;
-    --primary: 154 72% 18%;
-    --primary-foreground: 48 33% 97%;
-    --secondary: 150 22% 91%;
-    --secondary-foreground: 154 72% 18%;
-    --muted: 48 20% 91%;
-    --muted-foreground: 156 12% 38%;
-    --accent: 42 70% 46%;
-    --accent-foreground: 156 32% 11%;
-    --destructive: 4 72% 47%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 150 16% 85%;
-    --input: 150 16% 85%;
-    --ring: 154 72% 18%;
-    --radius: 0.85rem;
+    /* Brand palette (mirrors hex tokens in spec) */
+    --green-deep:    156 70% 14%;   /* #0B3D2E */
+    --green:         154 64% 23%;   /* #15634A */
+    --green-soft:    150 47% 33%;   /* #2E7D5B */
+    --cream:          45 67% 96%;   /* #FBF8F1 */
+    --card-raw:        0  0% 100%;  /* #FFFFFF */
+    --gold:           43 53% 55%;   /* #C8A951 */
+    --gold-bright:    50 88% 60%;   /* #F4D03F */
+    --ink:           150 24% 10%;   /* #14201A */
+    --muted-raw:     150  7% 45%;   /* #6B7B72 */
+    --line:           45 28% 87%;   /* #E7E2D6 */
+    --under-par:     351 86% 42%;   /* #C8102E — classic red */
+    --over-par:      150 24% 10%;   /* dark ink */
+    --even-par:      150  7% 45%;   /* muted */
 
-    --score-under: 4 74% 48%;
-    --score-over: 156 32% 16%;
-    --score-even: 156 12% 40%;
+    /* shadcn-style aliases used throughout the existing UI */
+    --background: var(--cream);
+    --foreground: var(--ink);
+    --card: var(--card-raw);
+    --card-foreground: var(--ink);
+    --popover: var(--card-raw);
+    --popover-foreground: var(--ink);
+    --primary: var(--green);
+    --primary-foreground: var(--cream);
+    --secondary: 150 22% 91%;
+    --secondary-foreground: var(--green);
+    --muted: 48 24% 93%;
+    --muted-foreground: var(--muted-raw);
+    --accent: var(--gold);
+    --accent-foreground: var(--ink);
+    --destructive: var(--under-par);
+    --destructive-foreground: 0 0% 100%;
+    --border: var(--line);
+    --input: var(--line);
+    --ring: var(--green);
+    --radius: 1rem;
+
+    --score-under: var(--under-par);
+    --score-over:  var(--over-par);
+    --score-even:  var(--even-par);
+
+    /* Safe area insets — bottom-tab bar reads these. */
+    --safe-top:    env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
   }
 
   .dark {
@@ -52,53 +77,84 @@
     --ring: 152 46% 44%;
 
     --score-under: 4 82% 62%;
-    --score-over: 48 24% 88%;
-    --score-even: 150 10% 62%;
+    --score-over:  48 24% 88%;
+    --score-even:  150 10% 62%;
   }
 
   * {
     @apply border-border;
   }
 
+  html, body {
+    /* Stop iOS Safari rubber-banding past the tab bar. */
+    overscroll-behavior-y: none;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    text-rendering: optimizeLegibility;
+    -webkit-tap-highlight-color: transparent;
   }
 
   h1, h2, h3 {
-    @apply font-serif;
+    @apply font-serif tracking-tight;
   }
 
   ::selection {
     @apply bg-primary/20;
   }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 }
 
 @layer components {
-  /* Legacy utility classes — kept on theme tokens so un-redesigned pages stay coherent. */
+  /* Card surface used everywhere. Rounded-2xl, hairline border, soft shadow. */
   .card {
-    @apply rounded-xl border border-border bg-card text-card-foreground shadow-soft p-5;
+    @apply rounded-2xl border border-border bg-card text-card-foreground shadow-soft p-5;
   }
 
   .btn {
-    @apply inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium
+    @apply inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-medium
            bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-60
-           transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring;
+           transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
+           min-h-[44px];
   }
 
   .btn-ghost {
-    @apply inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium
+    @apply inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-medium
            border border-border bg-card text-foreground hover:bg-muted transition
-           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring;
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
+           min-h-[44px];
   }
 
   .input {
-    @apply w-full rounded-md border border-input bg-background px-3 py-2 text-sm
+    @apply w-full rounded-xl border border-input bg-background px-3.5 py-2.5 text-base
            text-foreground placeholder:text-muted-foreground
-           focus:outline-none focus:ring-2 focus:ring-ring;
+           focus:outline-none focus:ring-2 focus:ring-ring min-h-[44px];
   }
 
   .label {
-    @apply block text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1;
+    @apply block text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground mb-1.5;
   }
+
+  /* Tap target shim — used by tab-bar items and steppers. */
+  .tap {
+    @apply min-w-[44px] min-h-[44px] inline-flex items-center justify-center;
+  }
+}
+
+@layer utilities {
+  /* Body padding to clear the bottom tab bar + iOS home indicator. */
+  .pb-tabbar {
+    padding-bottom: calc(72px + var(--safe-bottom));
+  }
+  .pt-safe { padding-top: var(--safe-top); }
+  .pb-safe { padding-bottom: var(--safe-bottom); }
 }

@@ -242,6 +242,12 @@ create table public.lodging (
 -- =============================================================================
 
 -- Helper: predicate function used by every policy below.
+-- Drop first in case a previous attempt left these functions with a different
+-- parameter name — `create or replace` can change the body but not parameter
+-- names, so a stale signature would error with 42P13.
+drop function if exists public.is_trip_member(uuid);
+drop function if exists public.is_trip_admin(uuid);
+
 create or replace function public.is_trip_member(p_trip_id uuid)
 returns boolean
 language sql

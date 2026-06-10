@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { Archive, ArchiveRestore, Check, Plus } from "lucide-react";
+import { AlertCircle, Archive, ArchiveRestore, Check, Plus } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveTrip } from "@/lib/trip-context";
 import { AdminSection, Field, FormRow, SubmitButton } from "@/components/admin/section";
@@ -11,7 +11,10 @@ import {
   unarchiveTripAction,
 } from "./actions";
 
-export default async function TripsAdminPage() {
+export default async function TripsAdminPage(props: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const searchParams = await props.searchParams;
   const supabase = await createClient();
   const {
     data: { user },
@@ -33,6 +36,12 @@ export default async function TripsAdminPage() {
       description="Create new trips, switch which one's active, or archive an old one."
       back={{ href: "/admin" }}
     >
+      {searchParams.error && (
+        <div className="flex items-start gap-2.5 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>{searchParams.error}</p>
+        </div>
+      )}
       <section className="card space-y-4">
         <header className="flex items-center gap-2">
           <Plus className="h-4 w-4 text-primary" />

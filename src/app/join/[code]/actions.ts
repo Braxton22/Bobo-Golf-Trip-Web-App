@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { setActiveTripCookie } from "@/lib/trip-context";
+import { ensureProfile } from "@/lib/ensure-profile";
 
 function toNum(v: FormDataEntryValue | null, fallback: number) {
   if (v == null || v === "") return fallback;
@@ -24,6 +25,9 @@ export async function joinTripAction(formData: FormData) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect(`/login?next=/join/${code}`);
+
+  // players.user_id FKs to profiles(id) — self-heal a missing profile row.
+  await ensureProfile(user);
 
   const { data: trip } = await supabase
     .from("trips")

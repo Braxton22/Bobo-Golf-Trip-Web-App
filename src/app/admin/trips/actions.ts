@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { generateJoinCode, setActiveTripCookie } from "@/lib/trip-context";
+import { ensureProfile } from "@/lib/ensure-profile";
 
 function toNum(v: FormDataEntryValue | null, fallback: number) {
   if (v == null || v === "") return fallback;
@@ -25,12 +26,17 @@ export async function createTripAction(formData: FormData) {
   const endDate = String(formData.get("end_date") ?? "") || null;
   let joinCode = String(formData.get("join_code") ?? "").trim().toUpperCase() || null;
 
-  if (!name) return;
+  if (!name) redirect("/admin/trips?error=" + encodeURIComponent("Trip name is required."));
 
   if (!joinCode) joinCode = generateJoinCode(name);
 
-  // Retry a couple of times in case of an unlikely collision.
+  // The trips.created_by FK points at profiles(id). Self-heal a missing
+  // profile row (e.g. account predates a DB reset) before inserting.
+  await ensureProfile(user);
+
+  // Retry a couple of times in case of an unlikely join-code collision.
   let inserted: { id: string } | null = null;
+  let lastError: string | null = null;
   for (let attempt = 0; attempt < 3 && !inserted; attempt++) {
     const code = attempt === 0 ? joinCode : generateJoinCode(name);
     const { data, error } = await supabase
@@ -47,9 +53,15 @@ export async function createTripAction(formData: FormData) {
       .select("id")
       .single();
     if (!error && data) inserted = data;
+    else lastError = error?.message ?? "Unknown error";
   }
 
-  if (!inserted) return;
+  if (!inserted) {
+    redirect(
+      "/admin/trips?error=" +
+        encodeURIComponent(`Couldn't create the trip: ${lastError ?? "unknown error"}`)
+    );
+  }
 
   // Author becomes an admin automatically (DB also treats created_by as admin).
   await supabase.from("trip_admins").upsert({ trip_id: inserted.id, user_id: user.id });

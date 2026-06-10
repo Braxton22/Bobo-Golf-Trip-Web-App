@@ -22,14 +22,14 @@ function lowerOrNull(v: FormDataEntryValue | null): string | null {
   return s.length > 0 ? s : null;
 }
 
+// Tee selection + tee time live on /admin/rounds (per-round, per-player) now.
+// The player record only carries identity + handicap + team.
 export async function createPlayerAction(formData: FormData) {
   const trip = await requireActiveAdmin();
   if (!trip) return;
   const name = String(formData.get("name") ?? "").trim();
   const email = lowerOrNull(formData.get("email"));
   const handicap = toNum(formData.get("handicap_index"), 0);
-  const tee_id = (String(formData.get("tee_id") ?? "") || null) as string | null;
-  const tee_time = (String(formData.get("tee_time") ?? "") || null) as string | null;
   const venmo = (String(formData.get("venmo_username") ?? "").trim() || null) as string | null;
   const team_id = (String(formData.get("team_id") ?? "") || null) as string | null;
   if (!name) return;
@@ -40,13 +40,12 @@ export async function createPlayerAction(formData: FormData) {
     name,
     email,
     handicap_index: handicap,
-    tee_id,
-    tee_time,
     venmo_username: venmo,
     team_id,
   });
   revalidatePath("/admin/players");
   revalidatePath("/admin/teams");
+  revalidatePath("/admin/rounds");
 }
 
 export async function updatePlayerAction(formData: FormData) {
@@ -57,8 +56,6 @@ export async function updatePlayerAction(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   const email = lowerOrNull(formData.get("email"));
   const handicap = toNum(formData.get("handicap_index"), 0);
-  const tee_id = (String(formData.get("tee_id") ?? "") || null) as string | null;
-  const tee_time = (String(formData.get("tee_time") ?? "") || null) as string | null;
   const venmo = (String(formData.get("venmo_username") ?? "").trim() || null) as string | null;
   const team_id = (String(formData.get("team_id") ?? "") || null) as string | null;
   const supabase = await createClient();
@@ -68,8 +65,6 @@ export async function updatePlayerAction(formData: FormData) {
       name,
       email,
       handicap_index: handicap,
-      tee_id,
-      tee_time,
       venmo_username: venmo,
       team_id,
     })
@@ -77,6 +72,7 @@ export async function updatePlayerAction(formData: FormData) {
     .eq("trip_id", trip.id);
   revalidatePath("/admin/players");
   revalidatePath("/admin/teams");
+  revalidatePath("/admin/rounds");
 }
 
 export async function deletePlayerAction(formData: FormData) {

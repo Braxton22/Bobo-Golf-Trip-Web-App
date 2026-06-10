@@ -2,8 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Flag } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import type { Course, Player, Tee, Trip } from "@/lib/db";
-import { Field, FormRow, SubmitButton } from "@/components/admin/section";
+import type { Player, Trip } from "@/lib/db";
+import { Field, SubmitButton } from "@/components/admin/section";
 import { joinTripAction } from "./actions";
 
 type PageProps = { params: Promise<{ code: string }> };
@@ -56,17 +56,6 @@ export default async function JoinPage({ params }: PageProps) {
     .eq("id", user.id)
     .maybeSingle();
 
-  const { data: course } = await supabase
-    .from("courses")
-    .select("id, name")
-    .eq("trip_id", trip.id)
-    .maybeSingle();
-  let tees: Tee[] = [];
-  if (course) {
-    const { data } = await supabase.from("tees").select("*").eq("course_id", (course as Course).id);
-    tees = (data ?? []) as Tee[];
-  }
-
   return (
     <div className="space-y-6">
       <header className="text-center space-y-2">
@@ -95,28 +84,16 @@ export default async function JoinPage({ params }: PageProps) {
           />
         </Field>
 
-        <FormRow>
-          <Field label="Handicap index" hint="Use whole/decimal, e.g. 12.4">
-            <input
-              className="input"
-              name="handicap_index"
-              type="number"
-              step="0.1"
-              defaultValue={player?.handicap_index ?? profile?.handicap ?? 0}
-              required
-            />
-          </Field>
-          <Field label="Tee">
-            <select className="input" name="tee_id" defaultValue={player?.tee_id ?? ""}>
-              <option value="">— pick one —</option>
-              {tees.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </FormRow>
+        <Field label="Handicap index" hint="Use whole/decimal, e.g. 12.4">
+          <input
+            className="input"
+            name="handicap_index"
+            type="number"
+            step="0.1"
+            defaultValue={player?.handicap_index ?? profile?.handicap ?? 0}
+            required
+          />
+        </Field>
 
         <Field label="Venmo username" hint="Used for settle-up deep links. No money is actually moved.">
           <input

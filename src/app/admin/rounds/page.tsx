@@ -1,14 +1,15 @@
 import { redirect } from "next/navigation";
-import { Calendar, Trash2 } from "lucide-react";
+import { Calendar, Clock, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveTrip, isTripAdmin } from "@/lib/trip-context";
 import { AdminSection, Field, FormRow, SubmitButton } from "@/components/admin/section";
 import { NoTrip } from "@/components/admin/no-trip";
-import type { Match, Player, Round, Team } from "@/lib/db";
+import type { Match, Player, PlayerRoundSettings, Round, Team, Tee } from "@/lib/db";
 import {
   bootstrapRoundsAction,
   createMatchAction,
   deleteMatchAction,
+  savePlayerRoundSettingsAction,
   updateRoundAction,
 } from "./actions";
 
@@ -35,14 +36,33 @@ export default async function RoundsAdminPage() {
   if (!trip) return <NoTrip />;
   if (!(await isTripAdmin(trip.id))) redirect("/admin");
 
-  const [{ data: roundsRaw }, { data: playersRaw }, { data: teamsRaw }] = await Promise.all([
+  const [{ data: roundsRaw }, { data: playersRaw }, { data: teamsRaw }, { data: coursesRaw }] = await Promise.all([
     supabase.from("rounds").select("*").eq("trip_id", trip.id).order("day_number"),
     supabase.from("players").select("*").eq("trip_id", trip.id).order("name"),
     supabase.from("teams").select("*").eq("trip_id", trip.id).order("created_at"),
+    supabase.from("courses").select("id").eq("trip_id", trip.id),
   ]);
   const rounds = (roundsRaw ?? []) as Round[];
   const players = (playersRaw ?? []) as Player[];
   const teams = (teamsRaw ?? []) as Team[];
+  const courseIds = (coursesRaw ?? []).map((c) => c.id as string);
+
+  // Tees for any course on the trip + per-round settings for every player.
+  let tees: Tee[] = [];
+  let prs: PlayerRoundSettings[] = [];
+  if (courseIds.length > 0) {
+    const { data } = await supabase.from("tees").select("*").in("course_id", courseIds);
+    tees = (data ?? []) as Tee[];
+  }
+  if (rounds.length > 0) {
+    const { data } = await supabase
+      .from("player_round_settings")
+      .select("*")
+      .in("round_id", rounds.map((r) => r.id));
+    prs = (data ?? []) as PlayerRoundSettings[];
+  }
+  const prsByRoundPlayer = new Map<string, PlayerRoundSettings>();
+  for (const r of prs) prsByRoundPlayer.set(`${r.round_id}|${r.player_id}`, r);
 
   let matches: Match[] = [];
   if (rounds.length > 0) {
@@ -113,6 +133,68 @@ export default async function RoundsAdminPage() {
                 </FormRow>
                 <SubmitButton className="btn-ghost">Save day</SubmitButton>
               </form>
+
+              {/* Per-player tee + tee time for THIS day. */}
+              <div className="border-t border-line pt-3 space-y-3">
+                <h3 className="label inline-flex items-center gap-1.5">
+                  <Clock className="h-3 w-3" /> Tee & tee time
+                </h3>
+                {players.length === 0 || tees.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    {players.length === 0
+                      ? "Add players first."
+                      : "Add a tee on the Course page first."}
+                  </p>
+                ) : (
+                  <form action={savePlayerRoundSettingsAction} className="space-y-2">
+                    <input type="hidden" name="round_id" value={round.id} />
+                    <div className="overflow-x-auto -mx-2 px-2">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                            <th className="text-left py-1.5 pr-2">Player</th>
+                            <th className="text-left py-1.5 pr-2">Tee</th>
+                            <th className="text-left py-1.5">Time</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {players.map((p) => {
+                            const setting = prsByRoundPlayer.get(`${round.id}|${p.id}`);
+                            return (
+                              <tr key={p.id} className="border-t border-line">
+                                <td className="py-1.5 pr-2 truncate">{p.name}</td>
+                                <td className="py-1.5 pr-2">
+                                  <select
+                                    name={`tee_${p.id}`}
+                                    className="input h-9 text-sm"
+                                    defaultValue={setting?.tee_id ?? ""}
+                                  >
+                                    <option value="">—</option>
+                                    {tees.map((t) => (
+                                      <option key={t.id} value={t.id}>
+                                        {t.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td className="py-1.5">
+                                  <input
+                                    type="time"
+                                    name={`time_${p.id}`}
+                                    className="input h-9 text-sm"
+                                    defaultValue={setting?.tee_time ?? ""}
+                                  />
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <SubmitButton className="btn-ghost">Save tees & times</SubmitButton>
+                  </form>
+                )}
+              </div>
 
               <div className="border-t border-line pt-3 space-y-3">
                 <h3 className="label">Matches</h3>

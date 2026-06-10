@@ -309,22 +309,33 @@ function TeamMatchList({
         const teamA = teams.find((t) => t.id === m.team_a_id);
         const teamB = teams.find((t) => t.id === m.team_b_id);
         return (
-          <li key={m.id} className="card flex flex-wrap items-center gap-3">
-            <div className="flex-1 min-w-0">
-              <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+          <li key={m.id} className="card space-y-2">
+            <header className="flex items-baseline justify-between gap-3">
+              <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
                 Match {m.match_number}
+              </span>
+              <span className="font-serif text-sm font-semibold">
+                {pts?.scoreline ?? "—"}
+              </span>
+            </header>
+
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-sm">
+              <div className="min-w-0">
+                <p className="truncate font-medium">{a || "—"}</p>
+                {teamA?.name && (
+                  <p className="text-[11px] text-muted-foreground truncate">{teamA.name}</p>
+                )}
+                <NetChip net={pts?.sideA} />
               </div>
-              <div className="mt-0.5 text-sm font-medium truncate">
-                {a}{" "}
-                <span className="text-muted-foreground">
-                  {teamA?.name ? `(${teamA.name})` : ""} vs {teamB?.name ? `(${teamB.name})` : ""}
-                </span>{" "}
-                {b}
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">vs</span>
+              <div className="min-w-0 text-right">
+                <p className="truncate font-medium">{b || "—"}</p>
+                {teamB?.name && (
+                  <p className="text-[11px] text-muted-foreground truncate">{teamB.name}</p>
+                )}
+                <NetChip net={pts?.sideB} alignRight />
               </div>
             </div>
-            <span className="font-serif text-sm font-semibold">
-              {pts?.scoreline ?? "—"}
-            </span>
           </li>
         );
       })}
@@ -332,6 +343,29 @@ function TeamMatchList({
         <li className="text-sm text-muted-foreground">No matches scheduled.</li>
       )}
     </ul>
+  );
+}
+
+function NetChip({ net, alignRight = false }: { net?: SideNet; alignRight?: boolean }) {
+  if (!net || net.thru === 0) {
+    return (
+      <p className={`text-[11px] text-muted-foreground tabular-nums ${alignRight ? "text-right" : ""}`}>
+        —
+      </p>
+    );
+  }
+  const tone = toParTone(net.toPar);
+  const color =
+    tone === "under"
+      ? "text-[hsl(var(--score-under))]"
+      : tone === "over"
+        ? "text-foreground"
+        : "text-muted-foreground";
+  return (
+    <p className={`tabular-nums text-xs ${alignRight ? "text-right" : ""}`}>
+      <span className={`font-semibold ${color}`}>{formatToPar(net.toPar)}</span>
+      <span className="text-muted-foreground"> · thru {net.thru}</span>
+    </p>
   );
 }
 
@@ -358,13 +392,36 @@ function SinglesBoard({
 // scoring engine for the right format.
 // ---------------------------------------------------------------------------
 
+type SideNet = { toPar: number | null; thru: number };
+type MatchPoints = {
+  team_a_points: number;
+  team_b_points: number;
+  status: string;
+  scoreline: string;
+  sideA: SideNet;
+  sideB: SideNet;
+};
+
+/** Sum a per-hole net map against par-played to get net-to-par. */
+function netToPar(perHole: Map<number, number>, course: ScCourse): SideNet {
+  if (perHole.size === 0) return { toPar: null, thru: 0 };
+  let net = 0;
+  let par = 0;
+  const parByHole = new Map(course.holes.map((h) => [h.hole_number, h.par]));
+  for (const [hn, v] of perHole) {
+    net += v;
+    par += parByHole.get(hn) ?? 4;
+  }
+  return { toPar: net - par, thru: perHole.size };
+}
+
 function computeMatchPoints(
   match: Match,
   rounds: Round[],
   allScores: Score[],
   players: Player[],
   course: ScCourse
-): { team_a_points: number; team_b_points: number; status: string; scoreline: string } | null {
+): MatchPoints | null {
   const round = rounds.find((r) => r.id === match.round_id);
   if (!round) return null;
   const playerById = new Map(players.map((p) => [p.id, p]));
@@ -379,14 +436,8 @@ function computeMatchPoints(
       .filter((s) => s.team_side === "B")
       .map((s) => ({ hole_number: s.hole_number, gross: s.gross }));
 
-    const sideA = {
-      pair: makePair(match.side_a, playerById),
-      scores: aScores,
-    };
-    const sideB = {
-      pair: makePair(match.side_b, playerById),
-      scores: bScores,
-    };
+    const sideA = { pair: makePair(match.side_a, playerById), scores: aScores };
+    const sideB = { pair: makePair(match.side_b, playerById), scores: bScores };
     const { aPerHole, bPerHole } = scrambleMatchPerHole(sideA, sideB, course);
     const prog = runMatchPlay(aPerHole, bPerHole);
     const res = matchResult(prog);
@@ -395,6 +446,8 @@ function computeMatchPoints(
       team_b_points: res.points.b,
       status: res.status,
       scoreline: res.scoreline,
+      sideA: netToPar(aPerHole, course),
+      sideB: netToPar(bPerHole, course),
     };
   }
 
@@ -406,16 +459,14 @@ function computeMatchPoints(
       const target = match.side_a.includes(s.player_id) ? aPerPlayer : bPerPlayer;
       (target[s.player_id] ??= []).push({ hole_number: s.hole_number, gross: s.gross });
     }
-    const sideA = {
-      pair: makePair(match.side_a, playerById),
-      scoresByPlayer: aPerPlayer,
-    };
-    const sideB = {
-      pair: makePair(match.side_b, playerById),
-      scoresByPlayer: bPerPlayer,
-    };
-    const aPerHole = bestBallBonusPerHole(sideA, course);
-    const bPerHole = bestBallBonusPerHole(sideB, course);
+    const aPerHole = bestBallBonusPerHole(
+      { pair: makePair(match.side_a, playerById), scoresByPlayer: aPerPlayer },
+      course
+    );
+    const bPerHole = bestBallBonusPerHole(
+      { pair: makePair(match.side_b, playerById), scoresByPlayer: bPerPlayer },
+      course
+    );
     const prog = runMatchPlay(aPerHole, bPerHole);
     const res = matchResult(prog);
     return {
@@ -423,6 +474,8 @@ function computeMatchPoints(
       team_b_points: res.points.b,
       status: res.status,
       scoreline: res.scoreline,
+      sideA: netToPar(aPerHole, course),
+      sideB: netToPar(bPerHole, course),
     };
   }
 
@@ -445,6 +498,8 @@ function computeMatchPoints(
     team_b_points: res.points.b,
     status: res.status,
     scoreline: res.scoreline,
+    sideA: netToPar(aPerHole, course),
+    sideB: netToPar(bPerHole, course),
   };
 }
 

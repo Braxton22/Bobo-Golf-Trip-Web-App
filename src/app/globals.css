@@ -3,82 +3,51 @@
 @tailwind utilities;
 
 /* ---------------------------------------------------------------------------
-   Design tokens — Augusta-inspired + Apple HIG. See spec §4.
-   Stored as HSL channels so they compose with tailwind utilities like
-   `bg-background/80` and `text-foreground/60`.
+   Design tokens — pure OLED dark only. Light theme retired (see spec §8
+   conversation 2026-06-10). Tokens are HSL channels so utilities like
+   `bg-background/80` compose normally.
    --------------------------------------------------------------------------- */
 @layer base {
   :root {
-    /* Brand palette (mirrors hex tokens in spec) */
-    --green-deep:    156 70% 14%;   /* #0B3D2E */
-    --green:         154 64% 23%;   /* #15634A */
-    --green-soft:    150 47% 33%;   /* #2E7D5B */
-    --cream:          45 67% 96%;   /* #FBF8F1 */
-    --card-raw:        0  0% 100%;  /* #FFFFFF */
-    --gold:           43 53% 55%;   /* #C8A951 */
-    --gold-bright:    50 88% 60%;   /* #F4D03F */
-    --ink:           150 24% 10%;   /* #14201A */
-    --muted-raw:     150  7% 45%;   /* #6B7B72 */
-    --line:           45 28% 87%;   /* #E7E2D6 */
-    --under-par:     351 86% 42%;   /* #C8102E — classic red */
-    --over-par:      150 24% 10%;   /* dark ink */
-    --even-par:      150  7% 45%;   /* muted */
+    /* Pure-black base for OLED. Cards sit just above the background so the
+       hairline border is visible without resorting to elevation/shadow. */
+    --background: 0 0% 0%;
+    --foreground: 45 35% 94%;       /* warm cream-white */
+    --card: 0 0% 6%;
+    --card-foreground: 45 35% 94%;
+    --popover: 0 0% 8%;
+    --popover-foreground: 45 35% 94%;
 
-    /* shadcn-style aliases used throughout the existing UI */
-    --background: var(--cream);
-    --foreground: var(--ink);
-    --card: var(--card-raw);
-    --card-foreground: var(--ink);
-    --popover: var(--card-raw);
-    --popover-foreground: var(--ink);
-    --primary: var(--green);
-    --primary-foreground: var(--cream);
-    --secondary: 150 22% 91%;
-    --secondary-foreground: var(--green);
-    --muted: 48 24% 93%;
-    --muted-foreground: var(--muted-raw);
-    --accent: var(--gold);
-    --accent-foreground: var(--ink);
-    --destructive: var(--under-par);
-    --destructive-foreground: 0 0% 100%;
-    --border: var(--line);
-    --input: var(--line);
-    --ring: var(--green);
+    --primary: 152 52% 46%;          /* Augusta green, brighter for black bg */
+    --primary-foreground: 0 0% 0%;
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 45 35% 94%;
+    --muted: 0 0% 10%;
+    --muted-foreground: 45 8% 68%;
+    --accent: 43 70% 58%;            /* gold accent */
+    --accent-foreground: 0 0% 0%;
+    --destructive: 4 80% 60%;
+    --destructive-foreground: 0 0% 0%;
+
+    --border: 0 0% 16%;
+    --input: 0 0% 16%;
+    --ring: 152 52% 46%;
     --radius: 1rem;
 
-    --score-under: var(--under-par);
-    --score-over:  var(--over-par);
-    --score-even:  var(--even-par);
+    /* Scoreboard tokens — Masters-board red for under par. */
+    --score-under: 4 82% 62%;
+    --score-over:  45 35% 94%;
+    --score-even:  45 8% 68%;
 
-    /* Safe area insets — bottom-tab bar reads these. */
+    /* Legacy aliases used by a few components — match the new palette. */
+    --green:        152 52% 46%;
+    --green-soft:   150 40% 40%;
+    --gold:         43 70% 58%;
+    --line:         0 0% 16%;
+    --ink:          45 35% 94%;
+
     --safe-top:    env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
-  }
-
-  .dark {
-    --background: 156 30% 6%;
-    --foreground: 48 24% 92%;
-    --card: 156 26% 9%;
-    --card-foreground: 48 24% 92%;
-    --popover: 156 26% 9%;
-    --popover-foreground: 48 24% 92%;
-    --primary: 152 46% 44%;
-    --primary-foreground: 156 32% 7%;
-    --secondary: 156 18% 15%;
-    --secondary-foreground: 48 24% 92%;
-    --muted: 156 16% 13%;
-    --muted-foreground: 150 10% 60%;
-    --accent: 42 66% 54%;
-    --accent-foreground: 156 32% 7%;
-    --destructive: 4 70% 53%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 156 14% 18%;
-    --input: 156 14% 18%;
-    --ring: 152 46% 44%;
-
-    --score-under: 4 82% 62%;
-    --score-over:  48 24% 88%;
-    --score-even:  150 10% 62%;
   }
 
   * {
@@ -86,8 +55,8 @@
   }
 
   html, body {
-    /* Stop iOS Safari rubber-banding past the tab bar. */
     overscroll-behavior-y: none;
+    color-scheme: dark;
   }
 
   body {
@@ -102,7 +71,7 @@
   }
 
   ::selection {
-    @apply bg-primary/20;
+    @apply bg-primary/30;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -115,7 +84,6 @@
 }
 
 @layer components {
-  /* Card surface used everywhere. Rounded-2xl, hairline border, soft shadow. */
   .card {
     @apply rounded-2xl border border-border bg-card text-card-foreground shadow-soft p-5;
   }
@@ -144,17 +112,15 @@
     @apply block text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground mb-1.5;
   }
 
-  /* Tap target shim — used by tab-bar items and steppers. */
   .tap {
     @apply min-w-[44px] min-h-[44px] inline-flex items-center justify-center;
   }
 }
 
 @layer utilities {
-  /* Body padding to clear the bottom tab bar + iOS home indicator. */
-  .pb-tabbar {
-    padding-bottom: calc(72px + var(--safe-bottom));
-  }
+  /* No bottom tab bar anymore — utility kept as a no-op so older pages don't
+     suddenly lose padding if anything still references it. */
+  .pb-tabbar { padding-bottom: var(--safe-bottom); }
   .pt-safe { padding-top: var(--safe-top); }
   .pb-safe { padding-bottom: var(--safe-bottom); }
 }

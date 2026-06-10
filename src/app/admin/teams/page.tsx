@@ -87,18 +87,6 @@ export default async function TeamsAdminPage() {
                     <input className="input" name="color" defaultValue={team.color ?? ""} />
                   </Field>
                 </FormRow>
-                <Field label="Captain">
-                  <select className="input" name="captain_id" defaultValue={team.captain_id ?? ""}>
-                    <option value="">— none —</option>
-                    {members
-                      .filter((m) => m.user_id)
-                      .map((m) => (
-                        <option key={m.user_id!} value={m.user_id!}>
-                          {m.name}
-                        </option>
-                      ))}
-                  </select>
-                </Field>
                 <SubmitButton className="btn-ghost">Save</SubmitButton>
               </form>
 

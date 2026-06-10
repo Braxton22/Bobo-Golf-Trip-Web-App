@@ -39,7 +39,6 @@ export async function joinTripAction(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return;
   const handicap = toNum(formData.get("handicap_index"), 0);
-  const tee_id = (String(formData.get("tee_id") ?? "") || null) as string | null;
   const venmo = (String(formData.get("venmo_username") ?? "").trim() || null) as string | null;
 
   // Already on the trip?
@@ -53,7 +52,7 @@ export async function joinTripAction(formData: FormData) {
   if (existing) {
     await supabase
       .from("players")
-      .update({ name, handicap_index: handicap, tee_id, venmo_username: venmo })
+      .update({ name, handicap_index: handicap, venmo_username: venmo })
       .eq("id", existing.id);
   } else {
     await supabase.from("players").insert({
@@ -61,7 +60,6 @@ export async function joinTripAction(formData: FormData) {
       user_id: user.id,
       name,
       handicap_index: handicap,
-      tee_id,
       venmo_username: venmo,
     });
   }

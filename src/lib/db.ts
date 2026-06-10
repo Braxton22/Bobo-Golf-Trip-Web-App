@@ -178,3 +178,10 @@ export type Lodging = {
   check_out: string | null;
   notes: string | null;
 };
+
+export type PlayerRoundSettings = {
+  round_id: string;
+  player_id: string;
+  tee_id: string | null;
+  tee_time: string | null;
+};

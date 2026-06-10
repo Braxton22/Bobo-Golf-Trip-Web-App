@@ -28,12 +28,11 @@ export async function updateTeamAction(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   const name = String(formData.get("name") ?? "").trim();
   const color = String(formData.get("color") ?? "").trim() || null;
-  const captain_id = (String(formData.get("captain_id") ?? "") || null) as string | null;
   if (!id || !name) return;
   const supabase = await createClient();
   await supabase
     .from("teams")
-    .update({ name, color, captain_id })
+    .update({ name, color })
     .eq("id", id)
     .eq("trip_id", trip.id);
   revalidatePath("/admin/teams");

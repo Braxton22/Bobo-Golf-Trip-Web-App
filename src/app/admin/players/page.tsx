@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getActiveTrip, isTripAdmin } from "@/lib/trip-context";
 import { AdminSection, Field, FormRow, SubmitButton } from "@/components/admin/section";
 import { NoTrip } from "@/components/admin/no-trip";
-import type { Course, Player, Team, Tee } from "@/lib/db";
+import type { Player, Team } from "@/lib/db";
 import {
   createPlayerAction,
   deletePlayerAction,
@@ -22,27 +22,17 @@ export default async function PlayersAdminPage() {
   if (!trip) return <NoTrip />;
   if (!(await isTripAdmin(trip.id))) redirect("/admin");
 
-  const [{ data: playersRaw }, { data: teamsRaw }, { data: coursesRaw }] = await Promise.all([
+  const [{ data: playersRaw }, { data: teamsRaw }] = await Promise.all([
     supabase.from("players").select("*").eq("trip_id", trip.id).order("name"),
     supabase.from("teams").select("*").eq("trip_id", trip.id).order("created_at"),
-    supabase.from("courses").select("*").eq("trip_id", trip.id),
   ]);
   const players = (playersRaw ?? []) as Player[];
   const teams = (teamsRaw ?? []) as Team[];
-  const courses = (coursesRaw ?? []) as Course[];
-  let tees: Tee[] = [];
-  if (courses.length > 0) {
-    const { data } = await supabase
-      .from("tees")
-      .select("*")
-      .in("course_id", courses.map((c) => c.id));
-    tees = (data ?? []) as Tee[];
-  }
 
   return (
     <AdminSection
       title="Players"
-      description="Roster, handicap indexes, tee selection, tee times, Venmo."
+      description="Roster, handicap indexes, Venmo. Tee selection and tee times live on Rounds — they vary by day."
       back={{ href: "/admin" }}
     >
       <section className="card space-y-3">
@@ -89,21 +79,6 @@ export default async function PlayersAdminPage() {
                   </option>
                 ))}
               </select>
-            </Field>
-            <Field label="Tee">
-              <select className="input" name="tee_id" defaultValue="">
-                <option value="">— none —</option>
-                {tees.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </FormRow>
-          <FormRow>
-            <Field label="Tee time">
-              <input className="input" name="tee_time" type="time" />
             </Field>
             <Field label="Venmo username">
               <input className="input" name="venmo_username" placeholder="@hank-aaron" />
@@ -168,26 +143,6 @@ export default async function PlayersAdminPage() {
                           </option>
                         ))}
                       </select>
-                    </Field>
-                    <Field label="Tee">
-                      <select className="input" name="tee_id" defaultValue={p.tee_id ?? ""}>
-                        <option value="">— none —</option>
-                        {tees.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.name}
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
-                  </FormRow>
-                  <FormRow>
-                    <Field label="Tee time">
-                      <input
-                        className="input"
-                        name="tee_time"
-                        type="time"
-                        defaultValue={p.tee_time ?? ""}
-                      />
                     </Field>
                     <Field label="Venmo username">
                       <input

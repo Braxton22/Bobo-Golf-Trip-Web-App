@@ -112,6 +112,45 @@ export async function createMatchAction(formData: FormData) {
   revalidatePath("/admin/rounds");
 }
 
+/**
+ * Save the per-round tee + tee-time row for every player in one shot. Form
+ * fields are `tee_<player_id>` and `time_<player_id>`. Empty values clear.
+ */
+export async function savePlayerRoundSettingsAction(formData: FormData) {
+  const trip = await requireActiveAdmin();
+  if (!trip) return;
+  const round_id = String(formData.get("round_id") ?? "");
+  if (!round_id) return;
+  const supabase = await createClient();
+
+  const { data: round } = await supabase
+    .from("rounds")
+    .select("trip_id")
+    .eq("id", round_id)
+    .maybeSingle();
+  if (round?.trip_id !== trip.id) return;
+
+  const { data: players } = await supabase
+    .from("players")
+    .select("id")
+    .eq("trip_id", trip.id);
+  if (!players) return;
+
+  const rows = players
+    .map((p) => {
+      const tee = String(formData.get(`tee_${p.id}`) ?? "") || null;
+      const time = String(formData.get(`time_${p.id}`) ?? "") || null;
+      if (tee === null && time === null) return null;
+      return { round_id, player_id: p.id as string, tee_id: tee, tee_time: time };
+    })
+    .filter((r): r is { round_id: string; player_id: string; tee_id: string | null; tee_time: string | null } => r !== null);
+
+  if (rows.length > 0) {
+    await supabase.from("player_round_settings").upsert(rows, { onConflict: "round_id,player_id" });
+  }
+  revalidatePath("/admin/rounds");
+}
+
 export async function deleteMatchAction(formData: FormData) {
   const trip = await requireActiveAdmin();
   if (!trip) return;

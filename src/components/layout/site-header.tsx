@@ -10,19 +10,22 @@ import { cn } from "@/lib/utils";
 
 type SiteHeaderProps = {
   isSignedIn: boolean;
+  isAdmin?: boolean;
   signOut: () => void | Promise<void>;
 };
 
-const NAV_LINKS = [
+const BASE_NAV_LINKS = [
   { href: "/leaderboard", label: "Leaderboard" },
   { href: "/scorecard", label: "Scorecard" },
   { href: "/bets", label: "Bets" },
-  { href: "/admin", label: "Admin" },
 ];
 
-export function SiteHeader({ isSignedIn, signOut }: SiteHeaderProps) {
+const ADMIN_LINK = { href: "/admin", label: "Admin" };
+
+export function SiteHeader({ isSignedIn, isAdmin = false, signOut }: SiteHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const pathname = usePathname();
+  const NAV_LINKS = isAdmin ? [...BASE_NAV_LINKS, ADMIN_LINK] : BASE_NAV_LINKS;
 
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(`${href}/`);

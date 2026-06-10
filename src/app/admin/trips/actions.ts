@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { generateJoinCode, setActiveTripCookie } from "@/lib/trip-context";
 import { ensureProfile } from "@/lib/ensure-profile";
+import { isAppAdminEmail } from "@/lib/app-admin";
 
 function toNum(v: FormDataEntryValue | null, fallback: number) {
   if (v == null || v === "") return fallback;
@@ -18,6 +19,7 @@ export async function createTripAction(formData: FormData) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login?next=/admin/trips");
+  if (!isAppAdminEmail(user.email)) redirect("/leaderboard");
 
   const name = String(formData.get("name") ?? "").trim();
   const year = toNum(formData.get("year"), new Date().getFullYear());

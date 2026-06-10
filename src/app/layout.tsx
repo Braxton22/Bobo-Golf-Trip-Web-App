@@ -8,6 +8,7 @@ import { SiteHeader } from "@/components/layout/site-header";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { BottomTabBar } from "@/components/layout/bottom-tab-bar";
 import { PWARegister } from "@/components/pwa-register";
+import { isAppAdminEmail } from "@/lib/app-admin";
 
 const sans = Inter({
   subsets: ["latin"],
@@ -53,16 +54,16 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  // Admin tab is visible to any signed-in user so brand-new users can create
-  // their first trip. Trip-scoped policies + per-page checks enforce real access.
-  const isAdmin = !!user;
+  // Admin tab is only shown to the app-admin allowlist (ADMIN_EMAILS).
+  // The /admin layout enforces the same check server-side.
+  const isAdmin = isAppAdminEmail(user?.email);
 
   return (
     <html lang="en" suppressHydrationWarning className={`${sans.variable} ${serif.variable}`}>
       <body>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
           <div className="flex min-h-screen flex-col bg-background pb-tabbar">
-            <SiteHeader isSignedIn={!!user} signOut={signOut} />
+            <SiteHeader isSignedIn={!!user} isAdmin={isAdmin} signOut={signOut} />
             <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-6 sm:px-6 sm:py-10 animate-fade-in">
               {children}
             </main>

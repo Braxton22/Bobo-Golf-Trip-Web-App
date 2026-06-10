@@ -118,9 +118,6 @@
 }
 
 @layer utilities {
-  /* No bottom tab bar anymore — utility kept as a no-op so older pages don't
-     suddenly lose padding if anything still references it. */
-  .pb-tabbar { padding-bottom: var(--safe-bottom); }
   .pt-safe { padding-top: var(--safe-top); }
   .pb-safe { padding-bottom: var(--safe-bottom); }
 }

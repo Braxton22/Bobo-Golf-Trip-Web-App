@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { Trash2, UserPlus } from "lucide-react";
+import { CheckCircle2, Trash2, UserPlus } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveTrip, isTripAdmin } from "@/lib/trip-context";
 import { AdminSection, Field, FormRow, SubmitButton } from "@/components/admin/section";
@@ -50,6 +50,11 @@ export default async function PlayersAdminPage() {
           <UserPlus className="h-4 w-4 text-primary" />
           <h2 className="font-medium">Add a player</h2>
         </header>
+        <p className="text-xs text-muted-foreground">
+          Email is how the site recognizes the player when they sign in. As
+          soon as they magic-link with this address, their player profile is
+          linked automatically.
+        </p>
         <form action={createPlayerAction} className="space-y-3">
           <FormRow>
             <Field label="Name">
@@ -65,6 +70,15 @@ export default async function PlayersAdminPage() {
               />
             </Field>
           </FormRow>
+          <Field label="Email" hint="Used to auto-link their login.">
+            <input
+              className="input"
+              name="email"
+              type="email"
+              placeholder="player@example.com"
+              autoComplete="off"
+            />
+          </Field>
           <FormRow>
             <Field label="Team">
               <select className="input" name="team_id" defaultValue="">
@@ -123,6 +137,27 @@ export default async function PlayersAdminPage() {
                       />
                     </Field>
                   </FormRow>
+                  <Field
+                    label="Email"
+                    hint={
+                      p.user_id
+                        ? "✓ Linked — this player has signed in with this email."
+                        : "Auto-links when they sign in with this address."
+                    }
+                  >
+                    <div className="relative">
+                      <input
+                        className="input pr-9"
+                        name="email"
+                        type="email"
+                        defaultValue={p.email ?? ""}
+                        placeholder="player@example.com"
+                      />
+                      {p.user_id && (
+                        <CheckCircle2 className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[hsl(var(--green-soft))]" />
+                      )}
+                    </div>
+                  </Field>
                   <FormRow>
                     <Field label="Team">
                       <select className="input" name="team_id" defaultValue={p.team_id ?? ""}>

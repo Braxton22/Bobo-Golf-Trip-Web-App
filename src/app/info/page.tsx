@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
+  BookOpen,
   Camera,
   Cloud,
   CloudRain,
@@ -236,7 +237,20 @@ export default async function InfoPage() {
         </section>
       )}
 
-      {/* Photos link --------------------------------------------------- */}
+      {/* Quick links --------------------------------------------------- */}
+      <Link href="/format" className="card flex items-center gap-3 transition hover:shadow-lift">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <BookOpen className="h-5 w-5" />
+        </div>
+        <div className="flex-1">
+          <div className="font-medium">How the format works</div>
+          <div className="text-xs text-muted-foreground">
+            Scramble · Best ball + bonus · Singles · Cup points
+          </div>
+        </div>
+        <span className="text-xs text-muted-foreground">→</span>
+      </Link>
+
       <Link href="/photos" className="card flex items-center gap-3 transition hover:shadow-lift">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
           <Camera className="h-5 w-5" />

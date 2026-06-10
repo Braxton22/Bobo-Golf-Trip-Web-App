@@ -6,6 +6,7 @@ import { getActiveTrip, isTripAdmin } from "@/lib/trip-context";
 import type { Hole, Match, Player, Round, Score, Team } from "@/lib/db";
 import { ScoreEntry } from "./score-entry";
 import { MatchLiveSync } from "./live-sync";
+import { FormatBanner } from "./format-banner";
 
 type PageProps = { params: Promise<{ matchId: string }> };
 
@@ -83,6 +84,8 @@ export default async function MatchScorePage({ params }: PageProps) {
         </p>
         <h1 className="font-serif text-2xl font-semibold">Match {match.match_number}</h1>
       </header>
+
+      <FormatBanner formatKey={round.format} />
 
       {holes.length === 0 ? (
         <p className="card text-sm text-muted-foreground">

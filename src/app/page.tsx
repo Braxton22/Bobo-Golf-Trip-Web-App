@@ -34,6 +34,12 @@ export default async function Home() {
           <Link href="/login" className="btn w-full max-w-xs">
             Sign in with magic link
           </Link>
+          <Link
+            href="/format"
+            className="btn-ghost w-full max-w-xs"
+          >
+            How the format works
+          </Link>
           <p className="text-xs text-muted-foreground">Have a join code? Sign in then visit /join/&lt;code&gt;.</p>
         </div>
       </section>

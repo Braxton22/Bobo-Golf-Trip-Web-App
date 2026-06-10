@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { Trophy } from "lucide-react";
+import { BookOpen, Trophy } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveTrip } from "@/lib/trip-context";
+import { autoLinkPlayers } from "@/lib/ensure-profile";
 import {
   bestBallBonusPerHole,
   computeCupStandings,
@@ -28,6 +29,7 @@ export default async function LeaderboardPage(props: { searchParams: Promise<{ d
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login?next=/leaderboard");
+  await autoLinkPlayers();
 
   const trip = await getActiveTrip();
   if (!trip) {
@@ -102,6 +104,16 @@ export default async function LeaderboardPage(props: { searchParams: Promise<{ d
   return (
     <div className="space-y-6">
       <RealtimeRefresh tripId={trip.id} roundIds={rounds.map((r) => r.id)} />
+
+      <div className="flex justify-end">
+        <Link
+          href="/format"
+          className="inline-flex items-center gap-1.5 rounded-full border border-line bg-card px-3 py-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+        >
+          <BookOpen className="h-3.5 w-3.5" />
+          How the format works
+        </Link>
+      </div>
 
       {/* Cup standings ------------------------------------------------- */}
       <section className="card text-center space-y-2">

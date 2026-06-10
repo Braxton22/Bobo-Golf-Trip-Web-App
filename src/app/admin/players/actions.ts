@@ -17,10 +17,16 @@ function toNum(v: FormDataEntryValue | null, fallback: number) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function lowerOrNull(v: FormDataEntryValue | null): string | null {
+  const s = String(v ?? "").trim().toLowerCase();
+  return s.length > 0 ? s : null;
+}
+
 export async function createPlayerAction(formData: FormData) {
   const trip = await requireActiveAdmin();
   if (!trip) return;
   const name = String(formData.get("name") ?? "").trim();
+  const email = lowerOrNull(formData.get("email"));
   const handicap = toNum(formData.get("handicap_index"), 0);
   const tee_id = (String(formData.get("tee_id") ?? "") || null) as string | null;
   const tee_time = (String(formData.get("tee_time") ?? "") || null) as string | null;
@@ -32,6 +38,7 @@ export async function createPlayerAction(formData: FormData) {
   await supabase.from("players").insert({
     trip_id: trip.id,
     name,
+    email,
     handicap_index: handicap,
     tee_id,
     tee_time,
@@ -48,6 +55,7 @@ export async function updatePlayerAction(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const name = String(formData.get("name") ?? "").trim();
+  const email = lowerOrNull(formData.get("email"));
   const handicap = toNum(formData.get("handicap_index"), 0);
   const tee_id = (String(formData.get("tee_id") ?? "") || null) as string | null;
   const tee_time = (String(formData.get("tee_time") ?? "") || null) as string | null;
@@ -58,6 +66,7 @@ export async function updatePlayerAction(formData: FormData) {
     .from("players")
     .update({
       name,
+      email,
       handicap_index: handicap,
       tee_id,
       tee_time,

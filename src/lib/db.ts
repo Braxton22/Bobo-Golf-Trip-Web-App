@@ -78,6 +78,7 @@ export type Player = {
   id: string;
   trip_id: string;
   user_id: string | null;
+  email: string | null;
   name: string;
   handicap_index: number;
   tee_id: string | null;

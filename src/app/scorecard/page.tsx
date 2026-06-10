@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { ChevronRight, Flag } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveTrip } from "@/lib/trip-context";
+import { autoLinkPlayers } from "@/lib/ensure-profile";
 import type { Match, Player, Round } from "@/lib/db";
 
 const FORMAT_LABEL: Record<Round["format"], string> = {
@@ -17,6 +18,7 @@ export default async function ScorecardIndex() {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login?next=/scorecard");
+  await autoLinkPlayers();
 
   const trip = await getActiveTrip();
   if (!trip) {

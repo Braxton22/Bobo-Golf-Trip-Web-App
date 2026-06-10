@@ -29,4 +29,16 @@ export async function ensureProfile(user: User): Promise<void> {
     display_name: displayName,
     email: user.email ?? null,
   });
+
+  // Claim any unlinked player rows the admin pre-seeded with this email.
+  await supabase.rpc("link_players_to_me");
+}
+
+/**
+ * Standalone auto-link. Cheap RPC — safe to call on every signed-in entry
+ * point so a pre-seeded player row gets claimed at first sight.
+ */
+export async function autoLinkPlayers(): Promise<void> {
+  const supabase = await createClient();
+  await supabase.rpc("link_players_to_me");
 }

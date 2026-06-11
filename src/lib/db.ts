@@ -10,6 +10,8 @@ export type Profile = {
   created_at: string;
 };
 
+export type TripType = "ryder_cup" | "casual";
+
 export type Trip = {
   id: string;
   name: string;
@@ -19,6 +21,7 @@ export type Trip = {
   location: string | null;
   join_code: string;
   created_by: string | null;
+  trip_type: TripType;
   handicap_mode: "simple" | "slope";
   scramble_allowance: { low: number; high: number };
   bonus_threshold: string;
@@ -88,12 +91,23 @@ export type Player = {
   created_at: string;
 };
 
+export type RoundFormat =
+  | "scramble"
+  | "best_ball_bonus"
+  | "singles"
+  | "medal"
+  | "stableford"
+  | "skins"
+  | "count_birdies"
+  | "match_play"
+  | "group_scramble";
+
 export type Round = {
   id: string;
   trip_id: string;
   course_id: string | null;
   day_number: number;
-  format: "scramble" | "best_ball_bonus" | "singles";
+  format: RoundFormat;
   date: string | null;
   points_per_match: number;
 };

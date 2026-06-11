@@ -6,8 +6,11 @@ import { getActiveTrip } from "@/lib/trip-context";
 import { autoLinkPlayers } from "@/lib/ensure-profile";
 import {
   bestBallBonusPerHole,
+  computeBirdieBoard,
   computeCupStandings,
   computeRoundLeaderboard,
+  computeSkins,
+  computeStablefordBoard,
   formatToPar,
   matchResult,
   runMatchPlay,
@@ -18,9 +21,8 @@ import {
   type HoleScore,
 } from "@/lib/scoring";
 import type { Hole as DBHole, Match, Player, Round, Score, Team } from "@/lib/db";
+import { FORMAT_LABEL } from "@/lib/trip-formats";
 import { RealtimeRefresh } from "./realtime-refresh";
-
-const DAY_LABEL = ["", "Day 1 — Scramble", "Day 2 — Best Ball + Bonus", "Day 3 — Singles"];
 
 export default async function LeaderboardPage(props: { searchParams: Promise<{ day?: string }> }) {
   const searchParams = await props.searchParams;
@@ -87,16 +89,21 @@ export default async function LeaderboardPage(props: { searchParams: Promise<{ d
   const day = requestedDay ?? dayWithScores ?? rounds[0]?.day_number ?? 1;
   const round = rounds.find((r) => r.day_number === day);
 
-  // Compute Cup standings from all match results across the trip.
-  const matchPoints = matches
-    .map((m) => computeMatchPoints(m, rounds, allScores, players, course))
-    .filter(Boolean) as { team_a_points: number; team_b_points: number; status: string }[];
+  const isRyder = trip.trip_type === "ryder_cup";
 
-  const cup = computeCupStandings(matchPoints, {
-    pointsToWin: Number(trip.points_to_win),
-    totalPoints: trip.total_points,
-    tieOutcomeLabel: trip.tie_outcome_label,
-  });
+  // Compute Cup standings from all match results across the trip (Ryder only).
+  const cup = isRyder
+    ? computeCupStandings(
+        matches
+          .map((m) => computeMatchPoints(m, rounds, allScores, players, course))
+          .filter(Boolean) as { team_a_points: number; team_b_points: number; status: string }[],
+        {
+          pointsToWin: Number(trip.points_to_win),
+          totalPoints: trip.total_points,
+          tieOutcomeLabel: trip.tie_outcome_label,
+        }
+      )
+    : null;
 
   const teamA = teams[0];
   const teamB = teams[1];
@@ -115,33 +122,46 @@ export default async function LeaderboardPage(props: { searchParams: Promise<{ d
         </Link>
       </div>
 
-      {/* Cup standings ------------------------------------------------- */}
-      <section className="card text-center space-y-2">
-        <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">
-          Ryder Cup standings
-        </p>
-        <div className="grid grid-cols-3 items-end gap-2">
-          <TeamScore name={teamA?.name ?? "Team A"} points={cup.teamAPoints} highlight={cup.winner === "A"} />
-          <div className="pb-2 text-xs uppercase tracking-wide text-muted-foreground">
-            {cup.status === "decided"
-              ? "Final"
-              : cup.status === "tie"
-                ? "Tied"
-                : `${cup.pointsRemaining} pts remaining`}
+      {/* Cup standings — Ryder Cup trips only --------------------------- */}
+      {cup && (
+        <section className="card text-center space-y-2">
+          <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">
+            Ryder Cup standings
+          </p>
+          <div className="grid grid-cols-3 items-end gap-2">
+            <TeamScore name={teamA?.name ?? "Team A"} points={cup.teamAPoints} highlight={cup.winner === "A"} />
+            <div className="pb-2 text-xs uppercase tracking-wide text-muted-foreground">
+              {cup.status === "decided"
+                ? "Final"
+                : cup.status === "tie"
+                  ? "Tied"
+                  : `${cup.pointsRemaining} pts remaining`}
+            </div>
+            <TeamScore name={teamB?.name ?? "Team B"} points={cup.teamBPoints} highlight={cup.winner === "B"} />
           </div>
-          <TeamScore name={teamB?.name ?? "Team B"} points={cup.teamBPoints} highlight={cup.winner === "B"} />
-        </div>
-        <p className="text-xs text-muted-foreground">{cup.scoreline}</p>
-        {(cup.status === "decided" || cup.status === "tie") && (
-          <Link
-            href="/recap"
-            className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--gold))]/15 px-3 py-1.5 text-xs font-medium text-[hsl(var(--ink))]"
-          >
-            <Trophy className="h-3.5 w-3.5" />
-            Open the recap →
-          </Link>
-        )}
-      </section>
+          <p className="text-xs text-muted-foreground">{cup.scoreline}</p>
+          {(cup.status === "decided" || cup.status === "tie") && (
+            <Link
+              href="/recap"
+              className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--gold))]/15 px-3 py-1.5 text-xs font-medium text-[hsl(var(--ink))]"
+            >
+              <Trophy className="h-3.5 w-3.5" />
+              Open the recap →
+            </Link>
+          )}
+        </section>
+      )}
+
+      {!isRyder && (
+        <header className="text-center space-y-0.5">
+          <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Leaderboard</p>
+          <h1 className="font-serif text-2xl font-semibold">{trip.name}</h1>
+        </header>
+      )}
+
+      {/* Count-your-birdies trip race — shown whenever the trip has any
+          birdie rounds, since points accumulate across the whole weekend. */}
+      {!isRyder && <BirdieTripRace rounds={rounds} allScores={allScores} players={players} course={course} />}
 
       {/* Day selector -------------------------------------------------- */}
       <nav className="flex flex-wrap gap-2" aria-label="Day selector">
@@ -166,7 +186,9 @@ export default async function LeaderboardPage(props: { searchParams: Promise<{ d
       {/* Round leaderboard -------------------------------------------- */}
       {round ? (
         <section className="space-y-3">
-          <h2 className="font-serif text-2xl font-semibold">{DAY_LABEL[round.day_number] ?? `Day ${round.day_number}`}</h2>
+          <h2 className="font-serif text-2xl font-semibold">
+            Day {round.day_number} — {FORMAT_LABEL[round.format]}
+          </h2>
 
           {round.format === "scramble" || round.format === "best_ball_bonus" ? (
             <TeamMatchList
@@ -177,7 +199,7 @@ export default async function LeaderboardPage(props: { searchParams: Promise<{ d
               teams={teams}
               course={course}
             />
-          ) : (
+          ) : round.format === "singles" || round.format === "match_play" ? (
             <SinglesBoard
               round={round}
               matches={matches.filter((m) => m.round_id === round.id)}
@@ -185,19 +207,349 @@ export default async function LeaderboardPage(props: { searchParams: Promise<{ d
               players={players}
               course={course}
             />
-          )}
+          ) : round.format === "stableford" ? (
+            <StablefordBoardCard round={round} allScores={allScores} players={players} course={course} />
+          ) : round.format === "skins" ? (
+            <SkinsBoardCard round={round} allScores={allScores} players={players} course={course} />
+          ) : round.format === "count_birdies" ? (
+            <BirdieRoundBoard
+              round={round}
+              rounds={rounds}
+              allScores={allScores}
+              players={players}
+              course={course}
+            />
+          ) : round.format === "group_scramble" ? (
+            <GroupBoardCard
+              round={round}
+              matches={matches.filter((m) => m.round_id === round.id)}
+              allScores={allScores}
+              players={players}
+              course={course}
+            />
+          ) : null}
 
-          <NetRoundBoard
-            round={round}
-            allScores={allScores}
-            players={players}
-            course={course}
-          />
+          {/* The net stroke-play board reads on any own-ball format. */}
+          {round.format !== "scramble" && round.format !== "group_scramble" && round.format !== "skins" && (
+            <NetRoundBoard
+              round={round}
+              allScores={allScores}
+              players={players}
+              course={course}
+            />
+          )}
         </section>
       ) : (
         <p className="card text-sm text-muted-foreground">No rounds scheduled.</p>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Casual-format boards
+// ---------------------------------------------------------------------------
+
+function soloScoresByPlayer(round: Round, allScores: Score[]): Record<string, HoleScore[]> {
+  const out: Record<string, HoleScore[]> = {};
+  for (const s of allScores.filter((s) => s.round_id === round.id)) {
+    if (!s.player_id) continue;
+    (out[s.player_id] ??= []).push({ hole_number: s.hole_number, gross: s.gross });
+  }
+  return out;
+}
+
+function toCasualPlayers(players: Player[]) {
+  return players.map((p) => ({ id: p.id, name: p.name, index: Number(p.handicap_index) }));
+}
+
+function StablefordBoardCard({
+  round,
+  allScores,
+  players,
+  course,
+}: {
+  round: Round;
+  allScores: Score[];
+  players: Player[];
+  course: ScCourse;
+}) {
+  const rows = computeStablefordBoard(toCasualPlayers(players), soloScoresByPlayer(round, allScores), course);
+  if (rows.every((r) => r.thru === 0)) {
+    return <EmptyBoard title="Stableford" />;
+  }
+  return (
+    <article className="card">
+      <h3 className="font-medium">Stableford points</h3>
+      <ul className="mt-2 divide-y divide-line">
+        {rows.map((r, i) => (
+          <li key={r.player_id} className="flex items-center gap-3 py-2">
+            <span className="w-6 text-center text-xs text-muted-foreground tabular-nums">
+              {r.thru === 0 ? "—" : i + 1}
+            </span>
+            <span className="flex-1 truncate text-sm">{r.name}</span>
+            <span className="text-xs text-muted-foreground tabular-nums">thru {r.thru}</span>
+            <span className="w-12 text-right font-serif text-lg font-semibold tabular-nums">
+              {r.points}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </article>
+  );
+}
+
+function SkinsBoardCard({
+  round,
+  allScores,
+  players,
+  course,
+}: {
+  round: Round;
+  allScores: Score[];
+  players: Player[];
+  course: ScCourse;
+}) {
+  const res = computeSkins(toCasualPlayers(players), soloScoresByPlayer(round, allScores), course);
+  const anyPosted = allScores.some((s) => s.round_id === round.id && s.player_id);
+  if (!anyPosted) return <EmptyBoard title="Skins" />;
+
+  return (
+    <article className="card space-y-3">
+      <header className="flex items-baseline justify-between">
+        <h3 className="font-medium">Skins</h3>
+        {res.carrying > 0 && (
+          <span className="rounded-full bg-[hsl(var(--gold))]/15 px-2.5 py-1 text-[11px] font-medium text-[hsl(var(--ink))]">
+            {res.carrying + 1} skins riding on the next hole
+          </span>
+        )}
+      </header>
+      <ul className="divide-y divide-line">
+        {res.rows.map((r, i) => (
+          <li key={r.player_id} className="flex items-center gap-3 py-2">
+            <span className="w-6 text-center text-xs text-muted-foreground tabular-nums">{i + 1}</span>
+            <span className="flex-1 truncate text-sm">{r.name}</span>
+            {r.holesWon.length > 0 && (
+              <span className="text-[11px] text-muted-foreground">
+                holes {r.holesWon.join(", ")}
+              </span>
+            )}
+            <span className="w-12 text-right font-serif text-lg font-semibold tabular-nums">
+              {r.skins}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="text-[11px] text-muted-foreground">
+        Net skins, ties carry. A hole settles once everyone has posted it.
+      </p>
+    </article>
+  );
+}
+
+/** Doubled holes for a count-birdies round: the back nine of the trip's final
+ *  count-birdies round ("the last 9 holes of the weekend count double"). */
+function birdieDoubledHoles(round: Round, rounds: Round[]): Set<number> {
+  const birdieRounds = rounds.filter((r) => r.format === "count_birdies");
+  const last = birdieRounds[birdieRounds.length - 1];
+  if (!last || last.id !== round.id) return new Set();
+  return new Set([10, 11, 12, 13, 14, 15, 16, 17, 18]);
+}
+
+function BirdieRoundBoard({
+  round,
+  rounds,
+  allScores,
+  players,
+  course,
+}: {
+  round: Round;
+  rounds: Round[];
+  allScores: Score[];
+  players: Player[];
+  course: ScCourse;
+}) {
+  const doubled = birdieDoubledHoles(round, rounds);
+  const rows = computeBirdieBoard(
+    toCasualPlayers(players),
+    soloScoresByPlayer(round, allScores),
+    course,
+    doubled
+  );
+  if (rows.every((r) => r.thru === 0)) return <EmptyBoard title="Count your birdies" />;
+  return (
+    <article className="card space-y-2">
+      <header className="flex items-baseline justify-between">
+        <h3 className="font-medium">Birdie points — this round</h3>
+        {doubled.size > 0 && (
+          <span className="rounded-full bg-[hsl(var(--gold))]/15 px-2.5 py-1 text-[11px] font-medium text-[hsl(var(--ink))]">
+            Back nine counts DOUBLE
+          </span>
+        )}
+      </header>
+      <BirdieRows rows={rows} />
+    </article>
+  );
+}
+
+function BirdieTripRace({
+  rounds,
+  allScores,
+  players,
+  course,
+}: {
+  rounds: Round[];
+  allScores: Score[];
+  players: Player[];
+  course: ScCourse;
+}) {
+  const birdieRounds = rounds.filter((r) => r.format === "count_birdies");
+  if (birdieRounds.length === 0) return null;
+
+  // Sum per-round boards (each with its own doubling rule) into a trip race.
+  const totals = new Map<string, { points: number; birdies: number; eagles: number }>();
+  for (const r of birdieRounds) {
+    const rows = computeBirdieBoard(
+      toCasualPlayers(players),
+      soloScoresByPlayer(r, allScores),
+      course,
+      birdieDoubledHoles(r, rounds)
+    );
+    for (const row of rows) {
+      const t = totals.get(row.player_id) ?? { points: 0, birdies: 0, eagles: 0 };
+      t.points += row.points;
+      t.birdies += row.birdies;
+      t.eagles += row.eagles;
+      totals.set(row.player_id, t);
+    }
+  }
+  const rows = players
+    .map((p) => ({
+      player_id: p.id,
+      name: p.name,
+      thru: 0,
+      ...(totals.get(p.id) ?? { points: 0, birdies: 0, eagles: 0 }),
+    }))
+    .sort((a, b) => (b.points !== a.points ? b.points - a.points : a.name.localeCompare(b.name)));
+
+  if (rows.every((r) => r.points === 0)) return null;
+
+  return (
+    <article className="card space-y-2">
+      <header className="flex items-baseline justify-between">
+        <h3 className="font-medium">Birdie race — whole trip</h3>
+        <span className="text-[11px] text-muted-foreground">
+          birdie 2 · eagle 4 · final back nine ×2
+        </span>
+      </header>
+      <BirdieRows rows={rows} />
+    </article>
+  );
+}
+
+function BirdieRows({
+  rows,
+}: {
+  rows: { player_id: string; name: string; points: number; birdies: number; eagles: number }[];
+}) {
+  return (
+    <ul className="divide-y divide-line">
+      {rows.map((r, i) => (
+        <li key={r.player_id} className="flex items-center gap-3 py-2">
+          <span className="w-6 text-center text-xs text-muted-foreground tabular-nums">{i + 1}</span>
+          <span className="flex-1 truncate text-sm">{r.name}</span>
+          <span className="text-[11px] text-muted-foreground tabular-nums">
+            {r.birdies}🐦{r.eagles > 0 ? ` ${r.eagles}🦅` : ""}
+          </span>
+          <span className="w-12 text-right font-serif text-lg font-semibold tabular-nums">
+            {r.points}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function GroupBoardCard({
+  round,
+  matches,
+  allScores,
+  players,
+  course,
+}: {
+  round: Round;
+  matches: Match[];
+  allScores: Score[];
+  players: Player[];
+  course: ScCourse;
+}) {
+  const nameById = new Map(players.map((p) => [p.id, p.name]));
+  const parByHole = new Map(course.holes.map((h) => [h.hole_number, h.par]));
+
+  const rows = matches.map((m) => {
+    let gross = 0;
+    let parPlayed = 0;
+    let thru = 0;
+    for (const s of allScores) {
+      if (s.match_id !== m.id || s.team_side !== "A") continue;
+      gross += s.gross;
+      parPlayed += parByHole.get(s.hole_number) ?? 4;
+      thru += 1;
+    }
+    return {
+      id: m.id,
+      number: m.match_number,
+      label: m.side_a.map((id) => nameById.get(id) ?? "?").join(", "),
+      toPar: thru > 0 ? gross - parPlayed : null,
+      gross: thru > 0 ? gross : null,
+      thru,
+    };
+  });
+  rows.sort((a, b) => {
+    if (a.toPar == null && b.toPar == null) return a.number - b.number;
+    if (a.toPar == null) return 1;
+    if (b.toPar == null) return -1;
+    return a.toPar - b.toPar;
+  });
+
+  if (rows.length === 0 || rows.every((r) => r.thru === 0)) return <EmptyBoard title="Scramble" />;
+
+  return (
+    <article className="card">
+      <h3 className="font-medium">Scramble — group board</h3>
+      <ul className="mt-2 divide-y divide-line">
+        {rows.map((r, i) => {
+          const tone = toParTone(r.toPar);
+          const color =
+            tone === "under"
+              ? "text-[hsl(var(--score-under))]"
+              : tone === "over"
+                ? "text-foreground"
+                : "text-muted-foreground";
+          return (
+            <li key={r.id} className="flex items-center gap-3 py-2">
+              <span className="w-6 text-center text-xs text-muted-foreground tabular-nums">
+                {r.thru === 0 ? "—" : i + 1}
+              </span>
+              <span className="flex-1 truncate text-sm">{r.label}</span>
+              <span className="text-xs text-muted-foreground tabular-nums">thru {r.thru}</span>
+              <span className={`w-12 text-right font-serif text-lg font-semibold tabular-nums ${color}`}>
+                {formatToPar(r.toPar)}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </article>
+  );
+}
+
+function EmptyBoard({ title }: { title: string }) {
+  return (
+    <article className="card">
+      <h3 className="font-medium">{title}</h3>
+      <p className="mt-1 text-sm text-muted-foreground">No scores posted yet.</p>
+    </article>
   );
 }
 

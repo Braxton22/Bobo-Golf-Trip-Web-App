@@ -16,14 +16,23 @@ export default async function AdminPage() {
 
   const trip = await getActiveTrip();
   const adminOfActive = trip ? await isTripAdmin(trip.id) : false;
+  const isRyder = trip?.trip_type === "ryder_cup";
 
   const cards: Card[] = [
     { href: "/admin/trips", label: "Trips", blurb: "Create, switch, archive.", Icon: Trophy },
-    { href: "/admin/teams", label: "Teams", blurb: "Two teams of six, captains.", Icon: Users, disabled: !trip || !adminOfActive },
-    { href: "/admin/players", label: "Players", blurb: "Roster, handicaps, tees, Venmo.", Icon: ListChecks, disabled: !trip || !adminOfActive },
+    ...(isRyder
+      ? [{ href: "/admin/teams", label: "Teams", blurb: "Two teams of six.", Icon: Users, disabled: !trip || !adminOfActive } satisfies Card]
+      : []),
+    { href: "/admin/players", label: "Players", blurb: "Roster, handicaps, Venmo.", Icon: ListChecks, disabled: !trip || !adminOfActive },
     { href: "/admin/course", label: "Course", blurb: "18 holes, par, stroke index, yardages.", Icon: Map, disabled: !trip || !adminOfActive },
     { href: "/admin/lodging", label: "Lodging", blurb: "Address, code, WiFi.", Icon: HomeIcon, disabled: !trip || !adminOfActive },
-    { href: "/admin/rounds", label: "Rounds & matches", blurb: "Day formats and pairings.", Icon: Calendar, disabled: !trip || !adminOfActive },
+    {
+      href: "/admin/rounds",
+      label: isRyder ? "Rounds & matches" : "Rounds & formats",
+      blurb: isRyder ? "Day formats and pairings." : "Days, formats, groups, tee times.",
+      Icon: Calendar,
+      disabled: !trip || !adminOfActive,
+    },
   ];
 
   return (

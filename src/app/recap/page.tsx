@@ -31,6 +31,9 @@ export default async function RecapPage() {
       </div>
     );
   }
+  // The recap page is Ryder-Cup-shaped (MVP by match points, Cup standings,
+  // team winner). Casual trips just go back to the leaderboard for now.
+  if (trip.trip_type !== "ryder_cup") redirect("/leaderboard");
 
   // Load everything in one fan-out.
   const [

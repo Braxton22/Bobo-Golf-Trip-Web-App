@@ -69,6 +69,13 @@ export default async function MatchScorePage({ params }: PageProps) {
         : null;
   const adminOfTrip = await isTripAdmin(trip.id);
 
+  // Casual 1v1 match play scores exactly like singles (own ball, full
+  // handicap) — reuse the singles entry UI for it.
+  const entryFormat =
+    round.format === "scramble" || round.format === "best_ball_bonus"
+      ? round.format
+      : ("singles" as const);
+
   return (
     <div className="space-y-4">
       <Link
@@ -95,7 +102,7 @@ export default async function MatchScorePage({ params }: PageProps) {
         <>
           <MatchLiveSync matchId={match.id} />
           <ScoreEntry
-          round={{ id: round.id, format: round.format }}
+          round={{ id: round.id, format: entryFormat }}
           match={{
             id: match.id,
             side_a: match.side_a,

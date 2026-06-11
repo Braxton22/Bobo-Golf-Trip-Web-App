@@ -23,6 +23,23 @@ export default async function TeamsAdminPage() {
   if (!trip) return <NoTrip />;
   if (!(await isTripAdmin(trip.id))) redirect("/admin");
 
+  // Teams only exist on Ryder Cup trips.
+  if (trip.trip_type !== "ryder_cup") {
+    return (
+      <AdminSection
+        title="Teams"
+        description="This is a casual trip — there are no teams."
+        back={{ href: "/admin" }}
+      >
+        <p className="card text-sm text-muted-foreground">
+          Casual trips score per round (medal, stableford, skins, match play,
+          scramble groups) without a team-vs-team layer. Set up days and
+          formats under Rounds instead.
+        </p>
+      </AdminSection>
+    );
+  }
+
   const [{ data: teamsRaw }, { data: playersRaw }] = await Promise.all([
     supabase.from("teams").select("*").eq("trip_id", trip.id).order("created_at"),
     supabase.from("players").select("*").eq("trip_id", trip.id).order("name"),

@@ -3,15 +3,16 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronUp, Info } from "lucide-react";
-import { formatByKey, type FormatKey } from "@/lib/format-info";
+import { FORMAT_META } from "@/lib/trip-formats";
+import type { RoundFormat } from "@/lib/db";
 
 /**
  * Inline format explainer on the scorecard. Collapsed by default — the
  * "Who enters?" line is always visible so a player on the tee box can confirm
  * "do I need to post for this hole?" in one glance.
  */
-export function FormatBanner({ formatKey }: { formatKey: FormatKey }) {
-  const f = formatByKey(formatKey);
+export function FormatBanner({ formatKey }: { formatKey: RoundFormat }) {
+  const f = FORMAT_META[formatKey];
   const [open, setOpen] = useState(false);
 
   return (
@@ -21,7 +22,7 @@ export function FormatBanner({ formatKey }: { formatKey: FormatKey }) {
           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary">
             <Info className="h-3.5 w-3.5" />
           </div>
-          <span className="text-sm font-medium">{f.short}</span>
+          <span className="text-sm font-medium">{f.label}</span>
           <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
             {f.size}
           </span>
@@ -44,10 +45,7 @@ export function FormatBanner({ formatKey }: { formatKey: FormatKey }) {
       {open && (
         <div className="space-y-2 pt-1 text-xs text-muted-foreground">
           <p>
-            <strong className="text-foreground">Hole scoring.</strong> {f.scoringRule}
-          </p>
-          <p>
-            <strong className="text-foreground">Match.</strong> {f.matchRule}
+            <strong className="text-foreground">Scoring.</strong> {f.scoringRule}
           </p>
           <Link
             href="/format"

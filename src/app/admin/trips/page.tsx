@@ -62,6 +62,15 @@ export default async function TripsAdminPage(props: {
               />
             </Field>
           </FormRow>
+          <Field
+            label="Trip type"
+            hint="Ryder Cup = two teams, three days, the Cup. Casual = no teams; pick a format per round (medal, stableford, skins, match play, scramble, count-your-birdies)."
+          >
+            <select className="input" name="trip_type" defaultValue="ryder_cup">
+              <option value="ryder_cup">Ryder Cup</option>
+              <option value="casual">Casual — per-round formats</option>
+            </select>
+          </Field>
           <Field label="Location">
             <input className="input" name="location" placeholder="Pinehurst, NC" />
           </Field>
@@ -112,6 +121,7 @@ export default async function TripsAdminPage(props: {
                       )}
                     </div>
                     <div className="text-xs text-muted-foreground">
+                      {t.trip_type === "ryder_cup" ? "Ryder Cup" : "Casual"} ·{" "}
                       {t.location ?? "—"} · join code{" "}
                       <span className="font-mono">{t.join_code}</span>
                     </div>

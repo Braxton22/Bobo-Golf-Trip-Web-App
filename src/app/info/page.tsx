@@ -15,7 +15,8 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveTrip } from "@/lib/trip-context";
-import type { Course, Hole, HoleYardage, Lodging, Tee } from "@/lib/db";
+import type { Course, Hole, HoleYardage, Lodging, Round, Tee } from "@/lib/db";
+import { FORMAT_LABEL } from "@/lib/trip-formats";
 import { fetchForecast, type DayForecast } from "@/lib/weather";
 
 export default async function InfoPage() {
@@ -67,6 +68,21 @@ export default async function InfoPage() {
     .eq("trip_id", trip.id)
     .maybeSingle();
   const lodging = lodgingRow as Lodging | null;
+
+  // Format-explainer subtitle adapts to the trip — Ryder Cup keeps its classic
+  // line; casual lists the actual formats scheduled.
+  const isRyder = trip.trip_type === "ryder_cup";
+  let formatSubtitle = "Scramble · Best ball + bonus · Singles · Cup points";
+  if (!isRyder) {
+    const { data: roundsRaw } = await supabase
+      .from("rounds")
+      .select("format")
+      .eq("trip_id", trip.id)
+      .order("day_number");
+    const rounds = (roundsRaw ?? []) as Pick<Round, "format">[];
+    const labels = [...new Set(rounds.map((r) => FORMAT_LABEL[r.format]))];
+    formatSubtitle = labels.length > 0 ? labels.join(" · ") : "Pick a format per round";
+  }
 
   let forecast: DayForecast[] = [];
   if (course?.latitude != null && course?.longitude != null) {
@@ -244,9 +260,7 @@ export default async function InfoPage() {
         </div>
         <div className="flex-1">
           <div className="font-medium">How the format works</div>
-          <div className="text-xs text-muted-foreground">
-            Scramble · Best ball + bonus · Singles · Cup points
-          </div>
+          <div className="text-xs text-muted-foreground">{formatSubtitle}</div>
         </div>
         <span className="text-xs text-muted-foreground">→</span>
       </Link>

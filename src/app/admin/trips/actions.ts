@@ -26,6 +26,8 @@ export async function createTripAction(formData: FormData) {
   const location = String(formData.get("location") ?? "").trim() || null;
   const startDate = String(formData.get("start_date") ?? "") || null;
   const endDate = String(formData.get("end_date") ?? "") || null;
+  const tripTypeRaw = String(formData.get("trip_type") ?? "ryder_cup");
+  const tripType = tripTypeRaw === "casual" ? "casual" : "ryder_cup";
   let joinCode = String(formData.get("join_code") ?? "").trim().toUpperCase() || null;
 
   if (!name) redirect("/admin/trips?error=" + encodeURIComponent("Trip name is required."));
@@ -50,6 +52,7 @@ export async function createTripAction(formData: FormData) {
         start_date: startDate,
         end_date: endDate,
         join_code: code,
+        trip_type: tripType,
         created_by: user.id,
       })
       .select("id")
@@ -68,11 +71,13 @@ export async function createTripAction(formData: FormData) {
   // Author becomes an admin automatically (DB also treats created_by as admin).
   await supabase.from("trip_admins").upsert({ trip_id: inserted.id, user_id: user.id });
 
-  // Default the two teams so the rest of the admin flow has something to attach to.
-  await supabase.from("teams").insert([
-    { trip_id: inserted.id, name: "Team Pine", color: "#0B3D2E" },
-    { trip_id: inserted.id, name: "Team Sand", color: "#C8A951" },
-  ]);
+  // Ryder Cup trips get the two default teams; casual trips have no teams.
+  if (tripType === "ryder_cup") {
+    await supabase.from("teams").insert([
+      { trip_id: inserted.id, name: "Team Pine", color: "#0B3D2E" },
+      { trip_id: inserted.id, name: "Team Sand", color: "#C8A951" },
+    ]);
+  }
 
   await setActiveTripCookie(inserted.id);
   revalidatePath("/admin/trips");

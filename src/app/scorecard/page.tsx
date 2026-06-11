@@ -5,12 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getActiveTrip } from "@/lib/trip-context";
 import { autoLinkPlayers } from "@/lib/ensure-profile";
 import type { Match, Player, Round } from "@/lib/db";
-
-const FORMAT_LABEL: Record<Round["format"], string> = {
-  scramble: "Scramble",
-  best_ball_bonus: "Best Ball + Bonus",
-  singles: "Singles",
-};
+import { FORMAT_LABEL, isSoloFormat } from "@/lib/trip-formats";
 
 export default async function ScorecardIndex() {
   const supabase = await createClient();
@@ -98,6 +93,8 @@ export default async function ScorecardIndex() {
             const mine = rm.filter(
               (m) => m.side_a.some((id) => myPlayerIds.has(id)) || m.side_b.some((id) => myPlayerIds.has(id))
             );
+            const solo = isSoloFormat(r.format);
+            const isGroup = r.format === "group_scramble";
             return (
               <li key={r.id} className="space-y-2">
                 <header className="flex items-baseline justify-between">
@@ -106,40 +103,64 @@ export default async function ScorecardIndex() {
                     {FORMAT_LABEL[r.format]}
                   </span>
                 </header>
-                {rm.length === 0 ? (
+
+                {solo || isGroup ? (
+                  <Link
+                    href={`/scorecard/round/${r.id}`}
+                    className="card flex items-center gap-3 transition hover:shadow-lift"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                        {FORMAT_LABEL[r.format]}
+                      </div>
+                      <div className="mt-0.5 font-medium">
+                        {isGroup
+                          ? rm.length > 0
+                            ? `${rm.length} group${rm.length === 1 ? "" : "s"} — post your group's score`
+                            : "No groups yet — ask the admin"
+                          : "Enter your own scores"}
+                      </div>
+                    </div>
+                    <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                  </Link>
+                ) : rm.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No matches yet.</p>
                 ) : (
-                  <ul className="space-y-2">
-                    {rm.map((m) => {
-                      const youIn =
-                        m.side_a.some((id) => myPlayerIds.has(id)) ||
-                        m.side_b.some((id) => myPlayerIds.has(id));
-                      const a = m.side_a.map((id) => nameById.get(id) ?? "?").join(" & ");
-                      const b = m.side_b.map((id) => nameById.get(id) ?? "?").join(" & ");
-                      return (
-                        <li key={m.id}>
-                          <Link
-                            href={`/scorecard/${m.id}`}
-                            className="card flex items-center gap-3 transition hover:shadow-lift"
-                          >
-                            <div className="flex-1 min-w-0">
-                              <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                                Match {m.match_number}
-                                {youIn && <span className="ml-2 text-primary">· You're playing</span>}
+                  <>
+                    <ul className="space-y-2">
+                      {rm.map((m) => {
+                        const youIn =
+                          m.side_a.some((id) => myPlayerIds.has(id)) ||
+                          m.side_b.some((id) => myPlayerIds.has(id));
+                        const a = m.side_a.map((id) => nameById.get(id) ?? "?").join(" & ");
+                        const b = m.side_b.map((id) => nameById.get(id) ?? "?").join(" & ");
+                        return (
+                          <li key={m.id}>
+                            <Link
+                              href={`/scorecard/${m.id}`}
+                              className="card flex items-center gap-3 transition hover:shadow-lift"
+                            >
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                                  Match {m.match_number}
+                                  {youIn && <span className="ml-2 text-primary">· You're playing</span>}
+                                </div>
+                                <div className="mt-0.5 font-medium truncate">
+                                  {a} <span className="text-muted-foreground">vs</span> {b}
+                                </div>
                               </div>
-                              <div className="mt-0.5 font-medium truncate">
-                                {a} <span className="text-muted-foreground">vs</span> {b}
-                              </div>
-                            </div>
-                            <ChevronRight className="h-5 w-5 text-muted-foreground" />
-                          </Link>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-                {mine.length === 0 && rm.length > 0 && (
-                  <p className="text-xs text-muted-foreground">You're not in any matches today — tap to spectate / enter scores.</p>
+                              <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                            </Link>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    {mine.length === 0 && rm.length > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        You're not in any matches today — tap to spectate / enter scores.
+                      </p>
+                    )}
+                  </>
                 )}
               </li>
             );

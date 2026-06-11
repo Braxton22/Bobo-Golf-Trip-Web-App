@@ -49,6 +49,81 @@ export async function bootstrapRoundsAction() {
   revalidatePath("/admin/rounds");
 }
 
+/** Casual trips: add one round at a time with an explicit format. */
+export async function createRoundAction(formData: FormData) {
+  const trip = await requireActiveAdmin();
+  if (!trip) return;
+  const day = Number(formData.get("day_number") ?? 0);
+  const format = String(formData.get("format") ?? "");
+  const date = (String(formData.get("date") ?? "") || null) as string | null;
+  const allowed = ["medal", "stableford", "skins", "count_birdies", "match_play", "group_scramble"];
+  if (!Number.isInteger(day) || day < 1 || day > 14 || !allowed.includes(format)) return;
+
+  const supabase = await createClient();
+  const { data: course } = await supabase
+    .from("courses")
+    .select("id")
+    .eq("trip_id", trip.id)
+    .maybeSingle();
+
+  await supabase.from("rounds").insert({
+    trip_id: trip.id,
+    day_number: day,
+    format,
+    date,
+    course_id: course?.id ?? null,
+  });
+  revalidatePath("/admin/rounds");
+}
+
+export async function deleteRoundAction(formData: FormData) {
+  const trip = await requireActiveAdmin();
+  if (!trip) return;
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  const supabase = await createClient();
+  await supabase.from("rounds").delete().eq("id", id).eq("trip_id", trip.id);
+  revalidatePath("/admin/rounds");
+}
+
+/**
+ * Casual group scramble: a "group" is a match row with everyone in side_a and
+ * an empty side_b. The group posts one ball as team_side 'A'.
+ */
+export async function createGroupAction(formData: FormData) {
+  const trip = await requireActiveAdmin();
+  if (!trip) return;
+  const round_id = String(formData.get("round_id") ?? "");
+  if (!round_id) return;
+  const supabase = await createClient();
+
+  const { data: round } = await supabase
+    .from("rounds")
+    .select("id, trip_id")
+    .eq("id", round_id)
+    .maybeSingle();
+  if (!round || round.trip_id !== trip.id) return;
+
+  const memberIds = formData.getAll("members").map(String).filter(Boolean);
+  if (memberIds.length === 0) return;
+
+  const { data: existing } = await supabase
+    .from("matches")
+    .select("match_number")
+    .eq("round_id", round_id)
+    .order("match_number", { ascending: false })
+    .limit(1);
+  const next = (existing?.[0]?.match_number ?? 0) + 1;
+
+  await supabase.from("matches").insert({
+    round_id,
+    match_number: next,
+    side_a: memberIds,
+    side_b: [],
+  });
+  revalidatePath("/admin/rounds");
+}
+
 export async function updateRoundAction(formData: FormData) {
   const trip = await requireActiveAdmin();
   if (!trip) return;

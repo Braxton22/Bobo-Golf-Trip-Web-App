@@ -7,7 +7,7 @@ import type { Hole } from "@/lib/scoring/types";
 
 type Input = {
   round_id: string;
-  match_id: string;
+  match_id: string | null; // null for solo-format rounds
   team_side: "A" | "B" | null;
   player_id: string | null;
   hole_number: number;
@@ -19,14 +19,20 @@ type Input = {
  * partial unique indexes that PostgREST won't target. Last-write-wins per the
  * spec.
  *
+ * Solo-format rounds (medal / stableford / skins / count-birdies) post with
+ * match_id null and player_id set — covered by the scores_unique_solo index.
+ *
  * Also computes `net` server-side so the round leaderboard can query it
  * directly without re-running the engine.
  */
 export async function upsertScore(input: Input) {
   const supabase = await createClient();
 
-  if (!input.match_id || !input.round_id || !input.hole_number) {
+  if (!input.round_id || !input.hole_number) {
     throw new Error("Missing identifiers");
+  }
+  if (!input.match_id && !input.player_id) {
+    throw new Error("Solo scores need a player");
   }
   if (input.gross < 1 || input.gross > 15) {
     throw new Error("Invalid score");
@@ -40,7 +46,7 @@ export async function upsertScore(input: Input) {
     const [{ data: player }, { data: roundRow }] = await Promise.all([
       supabase
         .from("players")
-        .select("handicap_index, trip_id, tee_id")
+        .select("handicap_index, trip_id")
         .eq("id", input.player_id)
         .maybeSingle(),
       supabase
@@ -70,8 +76,9 @@ export async function upsertScore(input: Input) {
     .from("scores")
     .select("id")
     .eq("round_id", input.round_id)
-    .eq("match_id", input.match_id)
     .eq("hole_number", input.hole_number);
+  if (input.match_id) q = q.eq("match_id", input.match_id);
+  else q = q.is("match_id", null);
   if (input.player_id) q = q.eq("player_id", input.player_id);
   else q = q.is("player_id", null).eq("team_side", input.team_side);
 
@@ -101,7 +108,7 @@ export async function upsertScore(input: Input) {
 
 export async function deleteScore(input: {
   round_id: string;
-  match_id: string;
+  match_id: string | null;
   team_side: "A" | "B" | null;
   player_id: string | null;
   hole_number: number;
@@ -111,8 +118,9 @@ export async function deleteScore(input: {
     .from("scores")
     .delete()
     .eq("round_id", input.round_id)
-    .eq("match_id", input.match_id)
     .eq("hole_number", input.hole_number);
+  if (input.match_id) q = q.eq("match_id", input.match_id);
+  else q = q.is("match_id", null);
   if (input.player_id) q = q.eq("player_id", input.player_id);
   else q = q.is("player_id", null).eq("team_side", input.team_side);
   await q;

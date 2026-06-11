@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Flag, Trophy, Smartphone, Wallet } from "lucide-react";
+import { Flag, Smartphone, Trophy, Wallet } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function Home() {
@@ -9,7 +9,7 @@ export default async function Home() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Signed in → straight to the live board. The bottom tabs handle the rest.
+  // Signed in → straight to the live board.
   if (user) redirect("/leaderboard");
 
   return (
@@ -19,26 +19,24 @@ export default async function Home() {
           <Flag className="h-6 w-6" />
         </div>
         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-          A Ryder Cup for the boys
+          The boys' golf trip, in your pocket
         </p>
         <h1 className="font-serif text-4xl font-semibold leading-tight sm:text-5xl">
-          Three days.<br />
-          Two teams.<br />
-          One cup.
+          Live scoring.<br />
+          Side bets.<br />
+          One scoreboard.
         </h1>
         <p className="mx-auto max-w-md text-sm text-muted-foreground">
-          Live net leaderboards, scramble + best-ball + singles match play, side bets settled on
-          Venmo — all in one phone-first app for the annual trip.
+          Run the trip your way — Ryder Cup format, medal play, stableford,
+          skins, or count your birdies. Phone-first, offline-safe, settle up on
+          Venmo at the end.
         </p>
         <div className="flex flex-col items-center gap-2 pt-2">
           <Link href="/login" className="btn w-full max-w-xs">
             Sign in with magic link
           </Link>
-          <Link
-            href="/format"
-            className="btn-ghost w-full max-w-xs"
-          >
-            How the format works
+          <Link href="/format" className="btn-ghost w-full max-w-xs">
+            How it works
           </Link>
           <p className="text-xs text-muted-foreground">Have a join code? Sign in then visit /join/&lt;code&gt;.</p>
         </div>
@@ -47,8 +45,8 @@ export default async function Home() {
       <ul className="grid gap-3 sm:grid-cols-3">
         <FeatureCard
           icon={Trophy}
-          title="12 points, 6½ to win"
-          blurb="3 scramble + 3 best-ball + 6 singles, all 1-point matches. Cup standings update live."
+          title="Built for any format"
+          blurb="Ryder Cup matches, medal play, stableford, skins, scramble, count-your-birdies — pick one per trip or mix them per round."
         />
         <FeatureCard
           icon={Smartphone}

@@ -21,6 +21,7 @@ export default async function PlayersAdminPage() {
   const trip = await getActiveTrip();
   if (!trip) return <NoTrip />;
   if (!(await isTripAdmin(trip.id))) redirect("/admin");
+  const isRyder = trip.trip_type === "ryder_cup";
 
   const [{ data: playersRaw }, { data: teamsRaw }] = await Promise.all([
     supabase.from("players").select("*").eq("trip_id", trip.id).order("name"),
@@ -69,21 +70,27 @@ export default async function PlayersAdminPage() {
               autoComplete="off"
             />
           </Field>
-          <FormRow>
-            <Field label="Team">
-              <select className="input" name="team_id" defaultValue="">
-                <option value="">— unassigned —</option>
-                {teams.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
+          {isRyder ? (
+            <FormRow>
+              <Field label="Team">
+                <select className="input" name="team_id" defaultValue="">
+                  <option value="">— unassigned —</option>
+                  {teams.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Venmo username">
+                <input className="input" name="venmo_username" placeholder="@hank-aaron" />
+              </Field>
+            </FormRow>
+          ) : (
             <Field label="Venmo username">
               <input className="input" name="venmo_username" placeholder="@hank-aaron" />
             </Field>
-          </FormRow>
+          )}
           <SubmitButton>Add player</SubmitButton>
         </form>
       </section>
@@ -133,17 +140,27 @@ export default async function PlayersAdminPage() {
                       )}
                     </div>
                   </Field>
-                  <FormRow>
-                    <Field label="Team">
-                      <select className="input" name="team_id" defaultValue={p.team_id ?? ""}>
-                        <option value="">— unassigned —</option>
-                        {teams.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.name}
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
+                  {isRyder ? (
+                    <FormRow>
+                      <Field label="Team">
+                        <select className="input" name="team_id" defaultValue={p.team_id ?? ""}>
+                          <option value="">— unassigned —</option>
+                          {teams.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                      <Field label="Venmo username">
+                        <input
+                          className="input"
+                          name="venmo_username"
+                          defaultValue={p.venmo_username ?? ""}
+                        />
+                      </Field>
+                    </FormRow>
+                  ) : (
                     <Field label="Venmo username">
                       <input
                         className="input"
@@ -151,7 +168,7 @@ export default async function PlayersAdminPage() {
                         defaultValue={p.venmo_username ?? ""}
                       />
                     </Field>
-                  </FormRow>
+                  )}
                   <div className="flex items-center justify-between">
                     <SubmitButton className="btn-ghost">Save</SubmitButton>
                     <button

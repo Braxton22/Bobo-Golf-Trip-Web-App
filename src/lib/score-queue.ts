@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 
 export type ScoreWrite = {
   round_id: string;
-  match_id: string;
+  match_id: string | null; // null for solo-format rounds (medal, stableford…)
   team_side: "A" | "B" | null;
   player_id: string | null;
   hole_number: number;
@@ -28,7 +28,7 @@ const DB_VERSION = 1;
 
 function keyFor(w: ScoreWrite): string {
   const who = w.player_id ?? `team:${w.team_side}`;
-  return `${w.round_id}|${w.match_id}|${who}|${w.hole_number}`;
+  return `${w.round_id}|${w.match_id ?? "solo"}|${who}|${w.hole_number}`;
 }
 
 let _dbPromise: Promise<IDBDatabase> | null = null;

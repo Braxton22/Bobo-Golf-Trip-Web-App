@@ -120,4 +120,19 @@
 @layer utilities {
   .pt-safe { padding-top: var(--safe-top); }
   .pb-safe { padding-bottom: var(--safe-bottom); }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+}
+
+/* Rolling leaderboard ticker (Masters-style). The track holds two copies of
+   the row set; translating it by -50% loops seamlessly. */
+@keyframes ticker {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.animate-ticker {
+  animation: ticker var(--ticker-duration, 40s) linear infinite;
+}
+.animate-ticker:hover {
+  animation-play-state: paused;
 }

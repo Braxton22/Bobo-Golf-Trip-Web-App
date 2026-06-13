@@ -67,7 +67,7 @@ export function SiteHeader({ isSignedIn, isAdmin = false, signOut }: SiteHeaderP
         style={{ paddingTop: "var(--safe-top)" }}
       >
         <div className="mx-auto flex h-14 max-w-3xl items-center justify-between px-4 sm:px-6">
-          <Link href={isSignedIn ? "/leaderboard" : "/"} className="flex items-center gap-2.5">
+          <Link href="/" className="flex items-center gap-2.5">
             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground">
               <Flag className="h-3.5 w-3.5" />
             </span>

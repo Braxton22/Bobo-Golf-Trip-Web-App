@@ -19,17 +19,16 @@ export default async function Home() {
           <Flag className="h-6 w-6" />
         </div>
         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-muted-foreground">
-          The boys' golf trip, in your pocket
+          Your trip, kept
         </p>
         <h1 className="font-serif text-4xl font-semibold leading-tight sm:text-5xl">
-          Live scoring.<br />
-          Side bets.<br />
-          One scoreboard.
+          Every round.<br />
+          Every bet.<br />
+          One place.
         </h1>
         <p className="mx-auto max-w-md text-sm text-muted-foreground">
-          Run the trip your way — Ryder Cup format, medal play, stableford,
-          skins, or count your birdies. Phone-first, offline-safe, settle up on
-          Venmo at the end.
+          From the annual cup to a quiet solo loop — live scoring, handicaps,
+          and side action, all on your phone.
         </p>
         <div className="flex flex-col items-center gap-2 pt-2">
           <Link href="/login" className="btn w-full max-w-xs">
@@ -55,8 +54,8 @@ export default async function Home() {
         />
         <FeatureCard
           icon={Wallet}
-          title="Venmo settle-up"
-          blurb="Track every side bet; one-tap Venmo links and a simplified end-of-trip plan."
+          title="Settle up clean"
+          blurb="Match bets and round pots tallied automatically, simplified to the fewest payments, one tap to Venmo."
         />
       </ul>
     </div>

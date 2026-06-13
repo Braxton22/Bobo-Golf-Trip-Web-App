@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Award, Coins, Flag, Star, Trophy } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveTrip } from "@/lib/trip-context";
-import type { Bet, BetParticipant, Hole, Match, Player, Round, Score, Team } from "@/lib/db";
+import type { Hole, Match, MatchBet, Player, Round, Score, Team } from "@/lib/db";
 import {
   bestBallBonusPerHole,
   computeCupStandings,
@@ -45,33 +45,28 @@ export default async function RecapPage() {
     supabase.from("rounds").select("*").eq("trip_id", trip.id).order("day_number"),
     supabase.from("players").select("*").eq("trip_id", trip.id),
     supabase.from("teams").select("*").eq("trip_id", trip.id).order("created_at"),
-    supabase.from("bets").select("*").eq("trip_id", trip.id),
+    supabase.from("match_bets").select("*").eq("trip_id", trip.id),
   ]);
   const rounds = (roundsRaw ?? []) as Round[];
   const players = (playersRaw ?? []) as Player[];
   const teams = (teamsRaw ?? []) as Team[];
-  const bets = (betsRaw ?? []) as Bet[];
+  const matchBets = (betsRaw ?? []) as MatchBet[];
 
   let matches: Match[] = [];
   let scores: Score[] = [];
   let holes: Hole[] = [];
-  let betParts: BetParticipant[] = [];
   if (rounds.length > 0) {
     const roundIds = rounds.map((r) => r.id);
-    const [{ data: m }, { data: s }, { data: h }, { data: bp }] = await Promise.all([
+    const [{ data: m }, { data: s }, { data: h }] = await Promise.all([
       supabase.from("matches").select("*").in("round_id", roundIds),
       supabase.from("scores").select("*").in("round_id", roundIds),
       rounds[0].course_id
         ? supabase.from("holes").select("*").eq("course_id", rounds[0].course_id).order("hole_number")
         : Promise.resolve({ data: [] as Hole[] }),
-      bets.length > 0
-        ? supabase.from("bet_participants").select("*").in("bet_id", bets.map((b) => b.id))
-        : Promise.resolve({ data: [] as BetParticipant[] }),
     ]);
     matches = (m ?? []) as Match[];
     scores = (s ?? []) as Score[];
     holes = (h ?? []) as Hole[];
-    betParts = (bp ?? []) as BetParticipant[];
   }
   const course: ScCourse = { holes };
 
@@ -124,16 +119,16 @@ export default async function RecapPage() {
   const mvp = mvpId ? players.find((p) => p.id === mvpId) : null;
   const mvpPoints = mvpId ? pointsByPlayer.get(mvpId) ?? 0 : 0;
 
-  // Biggest bet winner — net cash from settled bets, simplified per player.
+  // Biggest bet winner — net cash from settled match bets.
   const cashByPlayer = new Map<string, number>();
-  for (const bet of bets.filter((b) => b.status === "settled")) {
-    const bp = betParts.filter((p) => p.bet_id === bet.id);
-    const winners = bp.filter((p) => p.is_winner);
-    const losers = bp.filter((p) => !p.is_winner);
-    if (winners.length === 0 || losers.length === 0) continue;
-    const perWinner = Number(bet.amount) / winners.length;
-    for (const w of winners) cashByPlayer.set(w.player_id, (cashByPlayer.get(w.player_id) ?? 0) + perWinner * losers.length);
-    for (const l of losers) cashByPlayer.set(l.player_id, (cashByPlayer.get(l.player_id) ?? 0) - Number(bet.amount));
+  for (const bet of matchBets) {
+    if (!bet.taker_player_id) continue;
+    if (bet.outcome !== "placer" && bet.outcome !== "taker") continue;
+    const amount = Number(bet.amount);
+    const winnerId = bet.outcome === "placer" ? bet.placer_player_id : bet.taker_player_id;
+    const loserId = bet.outcome === "placer" ? bet.taker_player_id : bet.placer_player_id;
+    cashByPlayer.set(winnerId, (cashByPlayer.get(winnerId) ?? 0) + amount);
+    cashByPlayer.set(loserId, (cashByPlayer.get(loserId) ?? 0) - amount);
   }
   const richest = [...cashByPlayer.entries()].sort(([, a], [, b]) => b - a)[0];
   const bigWinner = richest ? { player: players.find((p) => p.id === richest[0]), amount: richest[1] } : null;

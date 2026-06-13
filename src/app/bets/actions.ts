@@ -1,9 +1,10 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveTrip } from "@/lib/trip-context";
+import { roundHasStarted } from "@/lib/round-status";
+import type { PotType } from "@/lib/db";
 
 function toNum(v: FormDataEntryValue | null, fallback: number) {
   if (v == null || v === "") return fallback;
@@ -11,132 +12,213 @@ function toNum(v: FormDataEntryValue | null, fallback: number) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-const VALID_TYPES = new Set([
-  "match",
-  "longest_drive",
-  "closest_to_pin",
-  "hole_score",
-  "low_net_round",
-  "skins",
-  "other",
-]);
-
-export async function createBetAction(formData: FormData) {
+async function currentPlayerOnTrip(): Promise<{
+  player_id: string;
+  user_id: string;
+  trip_id: string;
+} | null> {
   const trip = await getActiveTrip();
-  if (!trip) return;
+  if (!trip) return null;
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect("/login?next=/bets/new");
+  if (!user) return null;
+  const { data: player } = await supabase
+    .from("players")
+    .select("id")
+    .eq("trip_id", trip.id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!player) return null;
+  return { player_id: player.id as string, user_id: user.id, trip_id: trip.id };
+}
 
-  const type = String(formData.get("type") ?? "other");
-  if (!VALID_TYPES.has(type)) return;
+// ---------------------------------------------------------------------------
+// Match bets
+// ---------------------------------------------------------------------------
+
+/** Place a bet on a match in advance. The placer picks a side; another
+ *  player can take the other side later. */
+export async function placeMatchBetAction(formData: FormData) {
+  const ctx = await currentPlayerOnTrip();
+  if (!ctx) return;
+  const supabase = await createClient();
+
+  const match_id = String(formData.get("match_id") ?? "");
+  const side = String(formData.get("side") ?? "");
   const amount = toNum(formData.get("amount"), 0);
-  if (amount <= 0) return;
-  const description = (String(formData.get("description") ?? "").trim() || null) as string | null;
-  const hole_raw = String(formData.get("hole_number") ?? "");
-  const hole_number = hole_raw === "" ? null : Math.max(1, Math.min(18, Number(hole_raw)));
-  const round_id = (String(formData.get("round_id") ?? "") || null) as string | null;
-  const participantIds = formData.getAll("participant_ids").map(String).filter(Boolean);
+  if (!match_id || (side !== "A" && side !== "B") || amount <= 0) return;
 
-  if (participantIds.length < 2) return;
+  // Validate: match belongs to this trip, and round hasn't started.
+  const { data: match } = await supabase
+    .from("matches")
+    .select("id, side_a, side_b, round_id")
+    .eq("id", match_id)
+    .maybeSingle();
+  if (!match) return;
+  const { data: round } = await supabase
+    .from("rounds")
+    .select("id, trip_id")
+    .eq("id", match.round_id)
+    .maybeSingle();
+  if (!round || round.trip_id !== ctx.trip_id) return;
+
+  // No betting after the round has started.
+  if (await roundHasStarted(round.id)) return;
+
+  // You can't back your own opponent: if you're playing in this match on the
+  // opposite side from `side`, refuse.
+  const onA = (match.side_a as string[]).includes(ctx.player_id);
+  const onB = (match.side_b as string[]).includes(ctx.player_id);
+  if (onA && side === "B") return;
+  if (onB && side === "A") return;
 
   const { data: inserted } = await supabase
-    .from("bets")
+    .from("match_bets")
     .insert({
-      trip_id: trip.id,
-      round_id,
-      type,
-      hole_number,
+      trip_id: ctx.trip_id,
+      match_id,
+      placer_player_id: ctx.player_id,
+      side,
       amount,
-      description,
-      created_by: user.id,
     })
     .select("id")
     .single();
   if (!inserted) return;
 
-  await supabase.from("bet_participants").insert(
-    participantIds.map((player_id) => ({ bet_id: inserted.id, player_id }))
-  );
-
-  // Activity event for the feed.
   await supabase.from("activity_events").insert({
-    trip_id: trip.id,
-    round_id,
-    type: "bet_created",
-    payload: { bet_id: inserted.id, amount, description, kind: type },
+    trip_id: ctx.trip_id,
+    round_id: round.id,
+    type: "match_bet_placed",
+    payload: { match_bet_id: inserted.id, match_id, side, amount },
   });
 
   revalidatePath("/bets");
   revalidatePath("/feed");
-  redirect(`/bets/${inserted.id}`);
 }
 
-export async function settleBetAction(formData: FormData) {
-  const trip = await getActiveTrip();
-  if (!trip) return;
+/** Take an open match bet — claim the opposite side. */
+export async function takeMatchBetAction(formData: FormData) {
+  const ctx = await currentPlayerOnTrip();
+  if (!ctx) return;
+  const supabase = await createClient();
+
   const bet_id = String(formData.get("bet_id") ?? "");
   if (!bet_id) return;
-  const winnerIds = formData.getAll("winner_ids").map(String).filter(Boolean);
 
+  const { data: bet } = await supabase
+    .from("match_bets")
+    .select("id, trip_id, match_id, placer_player_id, taker_player_id, side")
+    .eq("id", bet_id)
+    .maybeSingle();
+  if (!bet || bet.trip_id !== ctx.trip_id) return;
+  if (bet.taker_player_id) return; // already taken
+  if (bet.placer_player_id === ctx.player_id) return;
+
+  const { data: match } = await supabase
+    .from("matches")
+    .select("side_a, side_b, round_id")
+    .eq("id", bet.match_id)
+    .maybeSingle();
+  if (!match) return;
+  if (await roundHasStarted(match.round_id)) return;
+
+  // Taker is backing the OPPOSITE side; reject if they're playing on the
+  // placer's side (would be backing their own opponent).
+  const onA = (match.side_a as string[]).includes(ctx.player_id);
+  const onB = (match.side_b as string[]).includes(ctx.player_id);
+  if (bet.side === "A" && onA) return;
+  if (bet.side === "B" && onB) return;
+
+  await supabase
+    .from("match_bets")
+    .update({ taker_player_id: ctx.player_id, taken_at: new Date().toISOString() })
+    .eq("id", bet_id);
+
+  await supabase.from("activity_events").insert({
+    trip_id: ctx.trip_id,
+    round_id: match.round_id,
+    type: "match_bet_taken",
+    payload: { match_bet_id: bet_id },
+  });
+
+  revalidatePath("/bets");
+  revalidatePath("/feed");
+}
+
+/** Cancel an open, untaken bet — only the placer can. */
+export async function cancelMatchBetAction(formData: FormData) {
+  const ctx = await currentPlayerOnTrip();
+  if (!ctx) return;
   const supabase = await createClient();
-  // Reset all participants for this bet to non-winners, then mark the chosen.
-  await supabase.from("bet_participants").update({ is_winner: false }).eq("bet_id", bet_id);
-  if (winnerIds.length > 0) {
+
+  const bet_id = String(formData.get("bet_id") ?? "");
+  if (!bet_id) return;
+
+  const { data: bet } = await supabase
+    .from("match_bets")
+    .select("trip_id, placer_player_id, taker_player_id")
+    .eq("id", bet_id)
+    .maybeSingle();
+  if (!bet || bet.trip_id !== ctx.trip_id) return;
+  if (bet.placer_player_id !== ctx.player_id) return;
+  if (bet.taker_player_id) return;
+
+  await supabase
+    .from("match_bets")
+    .update({ outcome: "cancelled", settled_at: new Date().toISOString() })
+    .eq("id", bet_id);
+  revalidatePath("/bets");
+}
+
+// ---------------------------------------------------------------------------
+// Round pots
+// ---------------------------------------------------------------------------
+
+const VALID_POT: PotType[] = ["skins", "deuces", "low_net"];
+
+/** Toggle the current player's opt-in for a round pot. Locked once any
+ *  score has been posted on the round. */
+export async function togglePotEntryAction(formData: FormData) {
+  const ctx = await currentPlayerOnTrip();
+  if (!ctx) return;
+  const supabase = await createClient();
+
+  const round_id = String(formData.get("round_id") ?? "");
+  const pot_type = String(formData.get("pot_type") ?? "") as PotType;
+  if (!round_id || !VALID_POT.includes(pot_type)) return;
+
+  // Round must belong to this trip and must not have started.
+  const { data: round } = await supabase
+    .from("rounds")
+    .select("id, trip_id")
+    .eq("id", round_id)
+    .maybeSingle();
+  if (!round || round.trip_id !== ctx.trip_id) return;
+  if (await roundHasStarted(round.id)) return;
+
+  const { data: existing } = await supabase
+    .from("round_pot_entries")
+    .select("player_id")
+    .eq("round_id", round_id)
+    .eq("pot_type", pot_type)
+    .eq("player_id", ctx.player_id)
+    .maybeSingle();
+
+  if (existing) {
     await supabase
-      .from("bet_participants")
-      .update({ is_winner: true })
-      .eq("bet_id", bet_id)
-      .in("player_id", winnerIds);
+      .from("round_pot_entries")
+      .delete()
+      .eq("round_id", round_id)
+      .eq("pot_type", pot_type)
+      .eq("player_id", ctx.player_id);
+  } else {
+    await supabase.from("round_pot_entries").insert({
+      round_id,
+      pot_type,
+      player_id: ctx.player_id,
+    });
   }
-  await supabase
-    .from("bets")
-    .update({ status: "settled", settled_at: new Date().toISOString() })
-    .eq("id", bet_id)
-    .eq("trip_id", trip.id);
-
-  await supabase.from("activity_events").insert({
-    trip_id: trip.id,
-    type: "bet_settled",
-    payload: { bet_id, winners: winnerIds },
-  });
-
   revalidatePath("/bets");
-  revalidatePath(`/bets/${bet_id}`);
-  revalidatePath("/bets/settle-up");
-  revalidatePath("/feed");
-}
-
-export async function cancelBetAction(formData: FormData) {
-  const trip = await getActiveTrip();
-  if (!trip) return;
-  const bet_id = String(formData.get("bet_id") ?? "");
-  if (!bet_id) return;
-  const supabase = await createClient();
-  await supabase
-    .from("bets")
-    .update({ status: "cancelled" })
-    .eq("id", bet_id)
-    .eq("trip_id", trip.id);
-  revalidatePath("/bets");
-  revalidatePath(`/bets/${bet_id}`);
-}
-
-export async function reopenBetAction(formData: FormData) {
-  const trip = await getActiveTrip();
-  if (!trip) return;
-  const bet_id = String(formData.get("bet_id") ?? "");
-  if (!bet_id) return;
-  const supabase = await createClient();
-  await supabase
-    .from("bets")
-    .update({ status: "open", settled_at: null })
-    .eq("id", bet_id)
-    .eq("trip_id", trip.id);
-  await supabase.from("bet_participants").update({ is_winner: false }).eq("bet_id", bet_id);
-  revalidatePath("/bets");
-  revalidatePath(`/bets/${bet_id}`);
-  revalidatePath("/bets/settle-up");
 }

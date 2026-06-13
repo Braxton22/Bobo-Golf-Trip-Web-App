@@ -173,6 +173,29 @@ export type ActivityEvent = {
   created_at: string;
 };
 
+export type MatchBet = {
+  id: string;
+  trip_id: string;
+  match_id: string;
+  placer_player_id: string;
+  side: "A" | "B";
+  amount: number;
+  taker_player_id: string | null;
+  taken_at: string | null;
+  settled_at: string | null;
+  outcome: "placer" | "taker" | "halve" | "cancelled" | null;
+  created_at: string;
+};
+
+export type PotType = "skins" | "deuces" | "low_net";
+
+export type RoundPotEntry = {
+  round_id: string;
+  pot_type: PotType;
+  player_id: string;
+  joined_at: string;
+};
+
 export type Photo = {
   id: string;
   trip_id: string;

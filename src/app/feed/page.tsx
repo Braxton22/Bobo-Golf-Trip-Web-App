@@ -13,6 +13,8 @@ const ICON_BY_TYPE: Record<string, typeof Sparkles> = {
   match_decided: Flag,
   bet_created: DollarSign,
   bet_settled: DollarSign,
+  match_bet_placed: DollarSign,
+  match_bet_taken: DollarSign,
   longest_drive: Target,
   closest_to_pin: Target,
   default: Sparkles,
@@ -26,6 +28,8 @@ const COLOR_BY_TYPE: Record<string, string> = {
   match_decided: "text-primary",
   bet_created: "text-muted-foreground",
   bet_settled: "text-foreground",
+  match_bet_placed: "text-muted-foreground",
+  match_bet_taken: "text-foreground",
   longest_drive: "text-foreground",
   closest_to_pin: "text-foreground",
 };
@@ -135,7 +139,15 @@ export default async function FeedPage() {
     const round = e.round_id ? roundById.get(e.round_id) : undefined;
     let text = "";
     let hint = round ? `Day ${round.day_number}` : undefined;
-    if (e.type === "bet_created") {
+    if (e.type === "match_bet_placed") {
+      const amount = (e.payload as { amount?: number })?.amount;
+      const side = (e.payload as { side?: string })?.side;
+      text = `New match bet${amount ? ` for $${amount}` : ""}${side ? ` on Side ${side}` : ""}`;
+    } else if (e.type === "match_bet_taken") {
+      text = "Match bet was taken — let's run it";
+    } else if (e.type === "bet_created") {
+      // Legacy event from the old freeform-bet schema. Kept readable for old
+      // trips that still have these in their feed.
       const desc = (e.payload as { description?: string })?.description;
       const amount = (e.payload as { amount?: number })?.amount;
       text = `New bet${amount ? ` for $${amount}` : ""}${desc ? `: ${desc}` : ""}`;

@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { signOut } from "./actions";
 import { SiteHeader } from "@/components/layout/site-header";
 import { SiteFooter } from "@/components/layout/site-footer";
+import { BackToHome } from "@/components/layout/back-to-home";
 import { PWARegister } from "@/components/pwa-register";
 import { isAppAdminEmail } from "@/lib/app-admin";
 
@@ -60,6 +61,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <div className="flex min-h-screen flex-col bg-background">
           <SiteHeader isSignedIn={!!user} isAdmin={isAdmin} signOut={signOut} />
           <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-6 sm:px-6 sm:py-10 animate-fade-in">
+            <BackToHome />
             {children}
           </main>
           <SiteFooter />

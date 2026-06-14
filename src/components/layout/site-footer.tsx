@@ -14,7 +14,7 @@ export function SiteFooter() {
           </span>
         </Link>
         <p className="text-sm text-muted-foreground">
-          Rounds, rentals, and side bets for the boys.
+          Three rounds. Two teams. One Cup.
         </p>
         <p className="text-xs text-muted-foreground">
           &copy; {year} Bobo Golf Trip

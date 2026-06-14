@@ -54,24 +54,34 @@ export default async function RecapPage() {
 
   let matches: Match[] = [];
   let scores: Score[] = [];
-  let holes: Hole[] = [];
+  let allHoles: Hole[] = [];
   if (rounds.length > 0) {
     const roundIds = rounds.map((r) => r.id);
+    const courseIds = [...new Set(rounds.map((r) => r.course_id).filter(Boolean))] as string[];
     const [{ data: m }, { data: s }, { data: h }] = await Promise.all([
       supabase.from("matches").select("*").in("round_id", roundIds),
       supabase.from("scores").select("*").in("round_id", roundIds),
-      rounds[0].course_id
-        ? supabase.from("holes").select("*").eq("course_id", rounds[0].course_id).order("hole_number")
+      courseIds.length > 0
+        ? supabase.from("holes").select("*").in("course_id", courseIds).order("hole_number")
         : Promise.resolve({ data: [] as Hole[] }),
     ]);
     matches = (m ?? []) as Match[];
     scores = (s ?? []) as Score[];
-    holes = (h ?? []) as Hole[];
+    allHoles = (h ?? []) as Hole[];
   }
-  const course: ScCourse = { holes };
+  const holesByCourse = new Map<string, Hole[]>();
+  for (const h of allHoles) {
+    (holesByCourse.get(h.course_id) ?? holesByCourse.set(h.course_id, []).get(h.course_id)!).push(h);
+  }
+  const courseFor = (r: Round | undefined): ScCourse => ({
+    holes: r?.course_id ? holesByCourse.get(r.course_id) ?? [] : [],
+  });
+  const roundById = new Map(rounds.map((r) => [r.id, r]));
 
   // Cup standings.
-  const matchPts = matches.map((m) => matchPointsFor(m, rounds, scores, players, course)).filter(Boolean) as {
+  const matchPts = matches
+    .map((m) => matchPointsFor(m, rounds, scores, players, courseFor(roundById.get(m.round_id))))
+    .filter(Boolean) as {
     match: Match;
     team_a_points: number;
     team_b_points: number;
@@ -99,11 +109,15 @@ export default async function RecapPage() {
     for (const r of rounds) {
       const sn = scores.filter((s) => s.round_id === r.id && s.player_id === p.id);
       if (sn.length === 0) continue;
+      const roundCourse = courseFor(r);
       const grosses: HoleScore[] = sn.map((s) => ({ hole_number: s.hole_number, gross: s.gross }));
-      const net = singlesPerHoleNet(Number(p.handicap_index), grosses, course);
+      const net = singlesPerHoleNet(Number(p.handicap_index), grosses, roundCourse);
       let total = 0;
       net.forEach((v) => (total += v));
-      const parPlayed = sn.reduce((a, s) => a + (holes.find((h) => h.hole_number === s.hole_number)?.par ?? 4), 0);
+      const parPlayed = sn.reduce(
+        (a, s) => a + (roundCourse.holes.find((h) => h.hole_number === s.hole_number)?.par ?? 4),
+        0
+      );
       byRound.set(r.id, total - parPlayed);
     }
     playerNetByRound.set(p.id, byRound);
@@ -144,12 +158,15 @@ export default async function RecapPage() {
     }
   }
 
-  // Most birdies-or-better.
+  // Most birdies-or-better. Par is per the score's round's course.
   const birdiesByPlayer = new Map<string, number>();
-  const parByHole = new Map(holes.map((h) => [h.hole_number, h.par]));
+  const parByCourseHole = new Map<string, number>();
+  for (const h of allHoles) parByCourseHole.set(`${h.course_id}|${h.hole_number}`, h.par);
   for (const s of scores) {
     if (!s.player_id) continue;
-    const par = parByHole.get(s.hole_number);
+    const courseId = roundById.get(s.round_id)?.course_id;
+    if (!courseId) continue;
+    const par = parByCourseHole.get(`${courseId}|${s.hole_number}`);
     if (!par) continue;
     if (s.gross <= par - 1) {
       birdiesByPlayer.set(s.player_id, (birdiesByPlayer.get(s.player_id) ?? 0) + 1);

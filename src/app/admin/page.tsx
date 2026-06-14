@@ -24,7 +24,7 @@ export default async function AdminPage() {
       ? [{ href: "/admin/teams", label: "Teams", blurb: "Two teams of six.", Icon: Users, disabled: !trip || !adminOfActive } satisfies Card]
       : []),
     { href: "/admin/players", label: "Players", blurb: "Roster, handicaps, Venmo.", Icon: ListChecks, disabled: !trip || !adminOfActive },
-    { href: "/admin/course", label: "Course", blurb: "18 holes, par, stroke index, yardages.", Icon: Map, disabled: !trip || !adminOfActive },
+    { href: "/admin/course", label: "Courses", blurb: "Per-day courses, holes, tees, yardages.", Icon: Map, disabled: !trip || !adminOfActive },
     { href: "/admin/lodging", label: "Lodging", blurb: "Address, code, WiFi.", Icon: HomeIcon, disabled: !trip || !adminOfActive },
     {
       href: "/admin/rounds",

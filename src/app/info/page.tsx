@@ -35,21 +35,25 @@ export default async function InfoPage() {
     );
   }
 
-  // Course + lodging + tees + holes + yardages.
-  const { data: courseRow } = await supabase
-    .from("courses")
-    .select("*")
-    .eq("trip_id", trip.id)
-    .maybeSingle();
-  const course = courseRow as Course | null;
+  // Courses (a trip can play several) + their holes/tees/yardages, plus
+  // rounds so we can label which day plays each course.
+  const [{ data: coursesRaw }, { data: roundsRaw }, { data: lodgingRow }] = await Promise.all([
+    supabase.from("courses").select("*").eq("trip_id", trip.id).order("created_at"),
+    supabase.from("rounds").select("day_number, format, course_id").eq("trip_id", trip.id).order("day_number"),
+    supabase.from("lodging").select("*").eq("trip_id", trip.id).maybeSingle(),
+  ]);
+  const courses = (coursesRaw ?? []) as Course[];
+  const rounds = (roundsRaw ?? []) as Pick<Round, "day_number" | "format" | "course_id">[];
+  const lodging = lodgingRow as Lodging | null;
 
   let holes: Hole[] = [];
   let tees: Tee[] = [];
   let yardages: HoleYardage[] = [];
-  if (course) {
+  if (courses.length > 0) {
+    const courseIds = courses.map((c) => c.id);
     const [{ data: h }, { data: t }] = await Promise.all([
-      supabase.from("holes").select("*").eq("course_id", course.id).order("hole_number"),
-      supabase.from("tees").select("*").eq("course_id", course.id).order("created_at"),
+      supabase.from("holes").select("*").in("course_id", courseIds).order("hole_number"),
+      supabase.from("tees").select("*").in("course_id", courseIds).order("created_at"),
     ]);
     holes = (h ?? []) as Hole[];
     tees = (t ?? []) as Tee[];
@@ -62,47 +66,41 @@ export default async function InfoPage() {
     }
   }
 
-  const { data: lodgingRow } = await supabase
-    .from("lodging")
-    .select("*")
-    .eq("trip_id", trip.id)
-    .maybeSingle();
-  const lodging = lodgingRow as Lodging | null;
+  // Group children by course.
+  const holesByCourse = new Map<string, Hole[]>();
+  for (const h of holes) (holesByCourse.get(h.course_id) ?? holesByCourse.set(h.course_id, []).get(h.course_id)!).push(h);
+  const teesByCourse = new Map<string, Tee[]>();
+  for (const t of tees) (teesByCourse.get(t.course_id) ?? teesByCourse.set(t.course_id, []).get(t.course_id)!).push(t);
+  const yardByTeeHole = new Map<string, number>(); // `${tee_id}|${hole_id}` → yards
+  for (const y of yardages) yardByTeeHole.set(`${y.tee_id}|${y.hole_id}`, y.yards);
+  const daysByCourse = new Map<string, number[]>();
+  for (const r of rounds) {
+    if (!r.course_id) continue;
+    (daysByCourse.get(r.course_id) ?? daysByCourse.set(r.course_id, []).get(r.course_id)!).push(r.day_number);
+  }
 
-  // Format-explainer subtitle adapts to the trip — Ryder Cup keeps its classic
-  // line; casual lists the actual formats scheduled.
+  // Format-explainer subtitle adapts to the trip.
   const isRyder = trip.trip_type === "ryder_cup";
   let formatSubtitle = "Scramble · Best ball + bonus · Singles · Cup points";
   if (!isRyder) {
-    const { data: roundsRaw } = await supabase
-      .from("rounds")
-      .select("format")
-      .eq("trip_id", trip.id)
-      .order("day_number");
-    const rounds = (roundsRaw ?? []) as Pick<Round, "format">[];
     const labels = [...new Set(rounds.map((r) => FORMAT_LABEL[r.format]))];
     formatSubtitle = labels.length > 0 ? labels.join(" · ") : "Pick a format per round";
   }
 
+  // Weather: forecast for the first course that has coordinates.
+  const weatherCourse = courses.find((c) => c.latitude != null && c.longitude != null) ?? null;
   let forecast: DayForecast[] = [];
-  if (course?.latitude != null && course?.longitude != null) {
+  if (weatherCourse?.latitude != null && weatherCourse?.longitude != null) {
     try {
       forecast = await fetchForecast({
-        latitude: Number(course.latitude),
-        longitude: Number(course.longitude),
+        latitude: Number(weatherCourse.latitude),
+        longitude: Number(weatherCourse.longitude),
         days: 3,
       });
     } catch {
-      // Open-Meteo is best-effort; if it fails (offline / outage) we just hide it.
       forecast = [];
     }
   }
-
-  const yardByHoleByTee = new Map<string, Map<string, number>>();
-  for (const t of tees) yardByHoleByTee.set(t.id, new Map());
-  for (const y of yardages) yardByHoleByTee.get(y.tee_id)?.set(y.hole_id, y.yards);
-
-  const totalPar = holes.reduce((a, h) => a + h.par, 0);
 
   return (
     <div className="space-y-6">
@@ -144,62 +142,73 @@ export default async function InfoPage() {
         </section>
       )}
 
-      {/* Course --------------------------------------------------------- */}
-      {course ? (
-        <section className="card space-y-3">
-          <header className="flex items-baseline justify-between">
-            <h2 className="font-medium">
-              {course.name}
-              <span className="ml-2 text-xs text-muted-foreground">par {totalPar}</span>
-            </h2>
-            {course.latitude != null && course.longitude != null && (
-              <a
-                href={`https://maps.google.com/?q=${course.latitude},${course.longitude}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
-              >
-                <MapPin className="h-3.5 w-3.5" />
-                Map
-              </a>
-            )}
-          </header>
-
-          {holes.length > 0 && (
-            <div className="overflow-x-auto -mx-2 px-2">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                    <th className="text-left py-1.5 pr-2">Hole</th>
-                    <th className="text-left py-1.5 pr-2">Par</th>
-                    <th className="text-left py-1.5 pr-2">SI</th>
-                    {tees.map((t) => (
-                      <th key={t.id} className="text-right py-1.5 pl-2 tabular-nums">
-                        {t.name}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {holes.map((h) => (
-                    <tr key={h.id} className="border-t border-line">
-                      <td className="py-1.5 pr-2 font-medium tabular-nums">{h.hole_number}</td>
-                      <td className="py-1.5 pr-2 tabular-nums">{h.par}</td>
-                      <td className="py-1.5 pr-2 tabular-nums text-muted-foreground">{h.stroke_index}</td>
-                      {tees.map((t) => (
-                        <td key={t.id} className="py-1.5 pl-2 text-right tabular-nums">
-                          {yardByHoleByTee.get(t.id)?.get(h.id) ?? "—"}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-      ) : (
+      {/* Courses -------------------------------------------------------- */}
+      {courses.length === 0 ? (
         <p className="card text-sm text-muted-foreground">No course set up yet.</p>
+      ) : (
+        courses.map((course) => {
+          const cHoles = holesByCourse.get(course.id) ?? [];
+          const cTees = teesByCourse.get(course.id) ?? [];
+          const totalPar = cHoles.reduce((a, h) => a + h.par, 0);
+          const days = (daysByCourse.get(course.id) ?? []).sort((a, b) => a - b);
+          return (
+            <section key={course.id} className="card space-y-3">
+              <header className="flex items-baseline justify-between gap-2">
+                <h2 className="font-medium">
+                  {course.name}
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    par {totalPar || "—"}
+                    {days.length > 0 ? ` · Day ${days.join(", ")}` : ""}
+                  </span>
+                </h2>
+                {course.latitude != null && course.longitude != null && (
+                  <a
+                    href={`https://maps.google.com/?q=${course.latitude},${course.longitude}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+                  >
+                    <MapPin className="h-3.5 w-3.5" />
+                    Map
+                  </a>
+                )}
+              </header>
+
+              {cHoles.length > 0 && (
+                <div className="overflow-x-auto -mx-2 px-2">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                        <th className="text-left py-1.5 pr-2">Hole</th>
+                        <th className="text-left py-1.5 pr-2">Par</th>
+                        <th className="text-left py-1.5 pr-2">SI</th>
+                        {cTees.map((t) => (
+                          <th key={t.id} className="text-right py-1.5 pl-2 tabular-nums">
+                            {t.name}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cHoles.map((h) => (
+                        <tr key={h.id} className="border-t border-line">
+                          <td className="py-1.5 pr-2 font-medium tabular-nums">{h.hole_number}</td>
+                          <td className="py-1.5 pr-2 tabular-nums">{h.par}</td>
+                          <td className="py-1.5 pr-2 tabular-nums text-muted-foreground">{h.stroke_index}</td>
+                          {cTees.map((t) => (
+                            <td key={t.id} className="py-1.5 pl-2 text-right tabular-nums">
+                              {yardByTeeHole.get(`${t.id}|${h.id}`) ?? "—"}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          );
+        })
       )}
 
       {/* Lodging -------------------------------------------------------- */}

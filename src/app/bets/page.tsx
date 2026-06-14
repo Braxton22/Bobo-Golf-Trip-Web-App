@@ -120,17 +120,24 @@ export default async function BetsPage() {
     entries = (data ?? []) as RoundPotEntry[];
   }
 
-  // Course holes — we still assume one course per trip.
-  let holes: Hole[] = [];
-  if (rounds[0]?.course_id) {
+  // Course holes per course — a trip can play a different course each day.
+  const courseIds = [...new Set(rounds.map((r) => r.course_id).filter(Boolean))] as string[];
+  let allHoles: Hole[] = [];
+  if (courseIds.length > 0) {
     const { data } = await supabase
       .from("holes")
       .select("*")
-      .eq("course_id", rounds[0].course_id)
+      .in("course_id", courseIds)
       .order("hole_number");
-    holes = (data ?? []) as Hole[];
+    allHoles = (data ?? []) as Hole[];
   }
-  const course: ScCourse = { holes };
+  const holesByCourse = new Map<string, Hole[]>();
+  for (const h of allHoles) {
+    (holesByCourse.get(h.course_id) ?? holesByCourse.set(h.course_id, []).get(h.course_id)!).push(h);
+  }
+  const courseFor = (r: Round | undefined): ScCourse => ({
+    holes: r?.course_id ? holesByCourse.get(r.course_id) ?? [] : [],
+  });
 
   // Scores fan-in for round status + pot computation.
   let scores: Score[] = [];
@@ -202,6 +209,7 @@ export default async function BetsPage() {
   function pickSideForMatch(m: Match): "A" | "B" | "halve" | null {
     const r = roundById.get(m.round_id);
     if (!r) return null;
+    const course = courseFor(r);
     const ms = scores.filter((s) => s.match_id === m.id);
     let aPerHole: Map<number, number> | undefined;
     let bPerHole: Map<number, number> | undefined;
@@ -283,10 +291,11 @@ export default async function BetsPage() {
         (sbp[s.player_id] ??= []).push({ hole_number: s.hole_number, gross: s.gross });
       }
 
+      const roundCourse = courseFor(r);
       let payout: PotPayout;
-      if (pot === "skins") payout = computeSkinsPot(potPlayers, sbp, course, BUY_IN, carry);
-      else if (pot === "deuces") payout = computeDeucesPot(potPlayers, sbp, BUY_IN, carry, course);
-      else payout = computeLowNetPot(potPlayers, sbp, course, BUY_IN, carry);
+      if (pot === "skins") payout = computeSkinsPot(potPlayers, sbp, roundCourse, BUY_IN, carry);
+      else if (pot === "deuces") payout = computeDeucesPot(potPlayers, sbp, BUY_IN, carry, roundCourse);
+      else payout = computeLowNetPot(potPlayers, sbp, roundCourse, BUY_IN, carry);
 
       const key = `${r.id}|${pot}`;
       carryByRoundPot.set(key, carry);

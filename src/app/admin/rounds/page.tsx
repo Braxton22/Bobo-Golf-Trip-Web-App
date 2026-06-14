@@ -40,12 +40,13 @@ export default async function RoundsAdminPage() {
     supabase.from("rounds").select("*").eq("trip_id", trip.id).order("day_number"),
     supabase.from("players").select("*").eq("trip_id", trip.id).order("name"),
     supabase.from("teams").select("*").eq("trip_id", trip.id).order("created_at"),
-    supabase.from("courses").select("id").eq("trip_id", trip.id),
+    supabase.from("courses").select("id, name").eq("trip_id", trip.id).order("created_at"),
   ]);
   const rounds = (roundsRaw ?? []) as Round[];
   const players = (playersRaw ?? []) as Player[];
   const teams = (teamsRaw ?? []) as Team[];
-  const courseIds = (coursesRaw ?? []).map((c) => c.id as string);
+  const courses = (coursesRaw ?? []) as { id: string; name: string }[];
+  const courseIds = courses.map((c) => c.id);
 
   // Tees for any course on the trip + per-round settings for every player.
   let tees: Tee[] = [];
@@ -197,6 +198,23 @@ export default async function RoundsAdminPage() {
                   />
                 )}
               </FormRow>
+              <Field
+                label="Course"
+                hint={
+                  courses.length === 0
+                    ? "Add courses under Admin → Courses first."
+                    : "Which course is played this day."
+                }
+              >
+                <select className="input" name="course_id" defaultValue={round.course_id ?? ""}>
+                  <option value="">— unassigned —</option>
+                  {courses.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
               <SubmitButton className="btn-ghost">Save day</SubmitButton>
             </form>
 

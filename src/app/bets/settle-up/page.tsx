@@ -60,7 +60,7 @@ export default async function SettleUpPage() {
 
   let entries: RoundPotEntry[] = [];
   let scores: Score[] = [];
-  let holes: Hole[] = [];
+  let allHoles: Hole[] = [];
   if (rounds.length > 0) {
     const ids = rounds.map((r) => r.id);
     const [{ data: e }, { data: s }] = await Promise.all([
@@ -69,16 +69,23 @@ export default async function SettleUpPage() {
     ]);
     entries = (e ?? []) as RoundPotEntry[];
     scores = (s ?? []) as Score[];
-    if (rounds[0].course_id) {
+    const courseIds = [...new Set(rounds.map((r) => r.course_id).filter(Boolean))] as string[];
+    if (courseIds.length > 0) {
       const { data } = await supabase
         .from("holes")
         .select("*")
-        .eq("course_id", rounds[0].course_id)
+        .in("course_id", courseIds)
         .order("hole_number");
-      holes = (data ?? []) as Hole[];
+      allHoles = (data ?? []) as Hole[];
     }
   }
-  const course: ScCourse = { holes };
+  const holesByCourse = new Map<string, Hole[]>();
+  for (const h of allHoles) {
+    (holesByCourse.get(h.course_id) ?? holesByCourse.set(h.course_id, []).get(h.course_id)!).push(h);
+  }
+  const courseFor = (r: Round | undefined): ScCourse => ({
+    holes: r?.course_id ? holesByCourse.get(r.course_id) ?? [] : [],
+  });
   const playerById = new Map(players.map((p) => [p.id, p]));
   const matchById = new Map(matches.map((m) => [m.id, m]));
   const roundById = new Map(rounds.map((r) => [r.id, r]));
@@ -91,7 +98,7 @@ export default async function SettleUpPage() {
     if (!b.taker_player_id) continue; // never taken
     const match = matchById.get(b.match_id);
     if (!match) continue;
-    const winSide = pickSideForMatch(match, scores, playerById, course, roundById);
+    const winSide = pickSideForMatch(match, scores, playerById, courseFor, roundById);
     if (!winSide) continue;
     if (winSide === "halve") continue; // push, no money moves
     if (winSide === b.side) {
@@ -125,12 +132,13 @@ export default async function SettleUpPage() {
         if (!s.player_id) continue;
         (sbp[s.player_id] ??= []).push({ hole_number: s.hole_number, gross: s.gross });
       }
+      const roundCourse = courseFor(r);
       const payout =
         pot === "skins"
-          ? computeSkinsPot(potPlayers, sbp, course, BUY_IN, carry)
+          ? computeSkinsPot(potPlayers, sbp, roundCourse, BUY_IN, carry)
           : pot === "deuces"
-            ? computeDeucesPot(potPlayers, sbp, BUY_IN, carry, course)
-            : computeLowNetPot(potPlayers, sbp, course, BUY_IN, carry);
+            ? computeDeucesPot(potPlayers, sbp, BUY_IN, carry, roundCourse)
+            : computeLowNetPot(potPlayers, sbp, roundCourse, BUY_IN, carry);
 
       if (!payout.settled) {
         carry = 0;
@@ -297,11 +305,12 @@ function pickSideForMatch(
   m: Match,
   scores: Score[],
   playerById: Map<string, Player>,
-  course: ScCourse,
+  courseFor: (r: Round | undefined) => ScCourse,
   roundById: Map<string, Round>
 ): "A" | "B" | "halve" | null {
   const r = roundById.get(m.round_id);
   if (!r) return null;
+  const course = courseFor(r);
   const ms = scores.filter((s) => s.match_id === m.id);
   let aPerHole: Map<number, number> | undefined;
   let bPerHole: Map<number, number> | undefined;

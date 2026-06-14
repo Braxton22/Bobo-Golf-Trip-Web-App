@@ -59,17 +59,24 @@ export default async function LeaderboardPage(props: { searchParams: Promise<{ d
   const players = (playersRaw ?? []) as Player[];
   const teams = (teamsRaw ?? []) as Team[];
 
-  // Course holes — assume one course per trip (matches admin flow).
-  let holes: DBHole[] = [];
-  if (rounds[0]?.course_id) {
+  // Course holes per course — trips can play a different course each day.
+  const courseIds = [...new Set(rounds.map((r) => r.course_id).filter(Boolean))] as string[];
+  let allHoles: DBHole[] = [];
+  if (courseIds.length > 0) {
     const { data } = await supabase
       .from("holes")
       .select("*")
-      .eq("course_id", rounds[0].course_id)
+      .in("course_id", courseIds)
       .order("hole_number");
-    holes = (data ?? []) as DBHole[];
+    allHoles = (data ?? []) as DBHole[];
   }
-  const course: ScCourse = { holes };
+  const holesByCourse = new Map<string, DBHole[]>();
+  for (const h of allHoles) {
+    (holesByCourse.get(h.course_id) ?? holesByCourse.set(h.course_id, []).get(h.course_id)!).push(h);
+  }
+  const courseFor = (r: Round | undefined): ScCourse => ({
+    holes: r?.course_id ? holesByCourse.get(r.course_id) ?? [] : [],
+  });
 
   let matches: Match[] = [];
   let allScores: Score[] = [];
@@ -95,7 +102,7 @@ export default async function LeaderboardPage(props: { searchParams: Promise<{ d
   const cup = isRyder
     ? computeCupStandings(
         matches
-          .map((m) => computeMatchPoints(m, rounds, allScores, players, course))
+          .map((m) => computeMatchPoints(m, rounds, allScores, players, courseFor(rounds.find((r) => r.id === m.round_id))))
           .filter(Boolean) as { team_a_points: number; team_b_points: number; status: string }[],
         {
           pointsToWin: Number(trip.points_to_win),
@@ -161,7 +168,7 @@ export default async function LeaderboardPage(props: { searchParams: Promise<{ d
 
       {/* Count-your-birdies trip race — shown whenever the trip has any
           birdie rounds, since points accumulate across the whole weekend. */}
-      {!isRyder && <BirdieTripRace rounds={rounds} allScores={allScores} players={players} course={course} />}
+      {!isRyder && <BirdieTripRace rounds={rounds} allScores={allScores} players={players} courseFor={courseFor} />}
 
       {/* Day selector -------------------------------------------------- */}
       <nav className="flex flex-wrap gap-2" aria-label="Day selector">
@@ -197,7 +204,7 @@ export default async function LeaderboardPage(props: { searchParams: Promise<{ d
               allScores={allScores}
               players={players}
               teams={teams}
-              course={course}
+              course={courseFor(round)}
             />
           ) : round.format === "singles" || round.format === "match_play" ? (
             <SinglesBoard
@@ -205,19 +212,19 @@ export default async function LeaderboardPage(props: { searchParams: Promise<{ d
               matches={matches.filter((m) => m.round_id === round.id)}
               allScores={allScores}
               players={players}
-              course={course}
+              course={courseFor(round)}
             />
           ) : round.format === "stableford" ? (
-            <StablefordBoardCard round={round} allScores={allScores} players={players} course={course} />
+            <StablefordBoardCard round={round} allScores={allScores} players={players} course={courseFor(round)} />
           ) : round.format === "skins" ? (
-            <SkinsBoardCard round={round} allScores={allScores} players={players} course={course} />
+            <SkinsBoardCard round={round} allScores={allScores} players={players} course={courseFor(round)} />
           ) : round.format === "count_birdies" ? (
             <BirdieRoundBoard
               round={round}
               rounds={rounds}
               allScores={allScores}
               players={players}
-              course={course}
+              course={courseFor(round)}
             />
           ) : round.format === "group_scramble" ? (
             <GroupBoardCard
@@ -225,7 +232,7 @@ export default async function LeaderboardPage(props: { searchParams: Promise<{ d
               matches={matches.filter((m) => m.round_id === round.id)}
               allScores={allScores}
               players={players}
-              course={course}
+              course={courseFor(round)}
             />
           ) : null}
 
@@ -235,7 +242,7 @@ export default async function LeaderboardPage(props: { searchParams: Promise<{ d
               round={round}
               allScores={allScores}
               players={players}
-              course={course}
+              course={courseFor(round)}
             />
           )}
         </section>
@@ -396,12 +403,12 @@ function BirdieTripRace({
   rounds,
   allScores,
   players,
-  course,
+  courseFor,
 }: {
   rounds: Round[];
   allScores: Score[];
   players: Player[];
-  course: ScCourse;
+  courseFor: (r: Round) => ScCourse;
 }) {
   const birdieRounds = rounds.filter((r) => r.format === "count_birdies");
   if (birdieRounds.length === 0) return null;
@@ -412,7 +419,7 @@ function BirdieTripRace({
     const rows = computeBirdieBoard(
       toCasualPlayers(players),
       soloScoresByPlayer(r, allScores),
-      course,
+      courseFor(r),
       birdieDoubledHoles(r, rounds)
     );
     for (const row of rows) {

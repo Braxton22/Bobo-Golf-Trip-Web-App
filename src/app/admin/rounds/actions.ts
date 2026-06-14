@@ -11,17 +11,23 @@ async function requireActiveAdmin() {
   return trip;
 }
 
+/** When a trip has exactly one course, new rounds default to it; with zero or
+ *  several courses we leave the round unassigned so the admin picks per day. */
+async function defaultCourseId(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  tripId: string
+): Promise<string | null> {
+  const { data } = await supabase.from("courses").select("id").eq("trip_id", tripId);
+  return data && data.length === 1 ? (data[0].id as string) : null;
+}
+
 /** Create the three standard rounds in one shot if they don't exist. */
 export async function bootstrapRoundsAction() {
   const trip = await requireActiveAdmin();
   if (!trip) return;
   const supabase = await createClient();
 
-  const { data: course } = await supabase
-    .from("courses")
-    .select("id")
-    .eq("trip_id", trip.id)
-    .maybeSingle();
+  const courseId = await defaultCourseId(supabase, trip.id);
 
   const formats: { day: number; format: "scramble" | "best_ball_bonus" | "singles" }[] = [
     { day: 1, format: "scramble" },
@@ -41,7 +47,7 @@ export async function bootstrapRoundsAction() {
         trip_id: trip.id,
         day_number: f.day,
         format: f.format,
-        course_id: course?.id ?? null,
+        course_id: courseId,
       });
     }
   }
@@ -60,18 +66,14 @@ export async function createRoundAction(formData: FormData) {
   if (!Number.isInteger(day) || day < 1 || day > 14 || !allowed.includes(format)) return;
 
   const supabase = await createClient();
-  const { data: course } = await supabase
-    .from("courses")
-    .select("id")
-    .eq("trip_id", trip.id)
-    .maybeSingle();
+  const courseId = await defaultCourseId(supabase, trip.id);
 
   await supabase.from("rounds").insert({
     trip_id: trip.id,
     day_number: day,
     format,
     date,
-    course_id: course?.id ?? null,
+    course_id: courseId,
   });
   revalidatePath("/admin/rounds");
 }
@@ -132,12 +134,27 @@ export async function updateRoundAction(formData: FormData) {
   const date = (String(formData.get("date") ?? "") || null) as string | null;
   const points = Number(formData.get("points_per_match") ?? 1) || 1;
   const supabase = await createClient();
+
+  // course_id: "" clears the assignment; any value must be a course on this trip.
+  const rawCourse = String(formData.get("course_id") ?? "");
+  let course_id: string | null = null;
+  if (rawCourse) {
+    const { data: c } = await supabase
+      .from("courses")
+      .select("id")
+      .eq("id", rawCourse)
+      .eq("trip_id", trip.id)
+      .maybeSingle();
+    course_id = c ? rawCourse : null;
+  }
+
   await supabase
     .from("rounds")
-    .update({ date, points_per_match: points })
+    .update({ date, points_per_match: points, course_id })
     .eq("id", id)
     .eq("trip_id", trip.id);
   revalidatePath("/admin/rounds");
+  revalidatePath("/admin/course");
 }
 
 /**

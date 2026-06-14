@@ -76,9 +76,11 @@ export async function upsertCourseAction(formData: FormData) {
 }
 
 /**
- * Save all 18 holes at once. Inputs come as par_1..par_18 and si_1..si_18.
- * Stroke indices must be a permutation of 1..18; we don't enforce that here
- * (the DB unique constraint will reject duplicates), but we do clamp pars.
+ * Save all 18 holes at once — par/SI plus per-tee yardages, in one grid.
+ * Inputs: par_1..par_18, si_1..si_18, and yards_<teeId>_<holeNumber>.
+ * Empty yardage cells are left untouched (so a partial fill doesn't wipe
+ * existing values). Stroke indices must be a permutation of 1..18; the DB
+ * unique constraint rejects duplicates. Pars are clamped 3..6.
  */
 export async function saveHolesAction(formData: FormData) {
   const trip = await requireActiveAdmin();
@@ -91,17 +93,41 @@ export async function saveHolesAction(formData: FormData) {
     .maybeSingle();
   if (!course) return;
 
-  // Upsert each hole.
+  const { data: holeRows } = await supabase
+    .from("holes")
+    .select("id, hole_number")
+    .eq("course_id", course.id);
+  const holes = holeRows ?? [];
+
+  // Par + stroke index.
   for (let n = 1; n <= 18; n++) {
     const par = Math.max(3, Math.min(6, toNum(formData.get(`par_${n}`), 4) ?? 4));
     const si = Math.max(1, Math.min(18, toNum(formData.get(`si_${n}`), n) ?? n));
-    // Update by (course_id, hole_number).
     await supabase
       .from("holes")
       .update({ par, stroke_index: si })
       .eq("course_id", course.id)
       .eq("hole_number", n);
   }
+
+  // Per-tee yardages, all tees in one pass.
+  const { data: teeRows } = await supabase.from("tees").select("id").eq("course_id", course.id);
+  const tees = teeRows ?? [];
+  if (tees.length > 0 && holes.length > 0) {
+    const holeIdByNum = new Map(holes.map((h) => [h.hole_number as number, h.id as string]));
+    const rows: { hole_id: string; tee_id: string; yards: number }[] = [];
+    for (const tee of tees) {
+      for (let n = 1; n <= 18; n++) {
+        const yards = toNum(formData.get(`yards_${tee.id}_${n}`));
+        const hole_id = holeIdByNum.get(n);
+        if (yards != null && hole_id) rows.push({ hole_id, tee_id: tee.id as string, yards });
+      }
+    }
+    if (rows.length > 0) {
+      await supabase.from("hole_yardages").upsert(rows, { onConflict: "hole_id,tee_id" });
+    }
+  }
+
   revalidatePath("/admin/course");
 }
 
@@ -137,34 +163,3 @@ export async function deleteTeeAction(formData: FormData) {
   revalidatePath("/admin/course");
 }
 
-export async function saveYardagesAction(formData: FormData) {
-  const trip = await requireActiveAdmin();
-  if (!trip) return;
-  const supabase = await createClient();
-  const tee_id = String(formData.get("tee_id") ?? "");
-  if (!tee_id) return;
-
-  const { data: course } = await supabase
-    .from("courses")
-    .select("id")
-    .eq("trip_id", trip.id)
-    .maybeSingle();
-  if (!course) return;
-
-  const { data: holes } = await supabase
-    .from("holes")
-    .select("id, hole_number")
-    .eq("course_id", course.id);
-  if (!holes) return;
-
-  const rows = holes
-    .map((h) => {
-      const yards = toNum(formData.get(`yards_${h.hole_number}`));
-      return yards == null ? null : { hole_id: h.id, tee_id, yards };
-    })
-    .filter((r): r is { hole_id: string; tee_id: string; yards: number } => r !== null);
-
-  if (rows.length === 0) return;
-  await supabase.from("hole_yardages").upsert(rows, { onConflict: "hole_id,tee_id" });
-  revalidatePath("/admin/course");
-}

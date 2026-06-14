@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { AlertCircle, Archive, ArchiveRestore, Check, Plus } from "lucide-react";
+import { AlertCircle, Archive, ArchiveRestore, Check, Pencil, Plus } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveTrip } from "@/lib/trip-context";
 import { AdminSection, Field, FormRow, SubmitButton } from "@/components/admin/section";
@@ -9,6 +9,7 @@ import {
   createTripAction,
   switchTripAction,
   unarchiveTripAction,
+  updateTripAction,
 } from "./actions";
 
 export default async function TripsAdminPage(props: {
@@ -103,52 +104,96 @@ export default async function TripsAdminPage(props: {
             {trips.map((t) => {
               const isActive = active?.id === t.id;
               return (
-                <li key={t.id} className="card flex flex-wrap items-center gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <div className="font-medium truncate">
-                        {t.name} <span className="text-muted-foreground">({t.year})</span>
+                <li key={t.id} className="card space-y-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <div className="font-medium truncate">
+                          {t.name} <span className="text-muted-foreground">({t.year})</span>
+                        </div>
+                        {isActive && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                            <Check className="h-3 w-3" /> Active
+                          </span>
+                        )}
+                        {t.archived && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                            Archived
+                          </span>
+                        )}
                       </div>
-                      {isActive && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-                          <Check className="h-3 w-3" /> Active
-                        </span>
+                      <div className="text-xs text-muted-foreground">
+                        {t.trip_type === "ryder_cup" ? "Ryder Cup" : "Casual"} ·{" "}
+                        {t.location ?? "—"} · join code{" "}
+                        <span className="font-mono">{t.join_code}</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {!isActive && (
+                        <form action={switchTripAction}>
+                          <input type="hidden" name="trip_id" value={t.id} />
+                          <button className="btn-ghost text-xs">Make active</button>
+                        </form>
                       )}
-                      {t.archived && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                          Archived
-                        </span>
+                      {t.archived ? (
+                        <form action={unarchiveTripAction}>
+                          <input type="hidden" name="trip_id" value={t.id} />
+                          <button className="btn-ghost text-xs inline-flex items-center gap-1">
+                            <ArchiveRestore className="h-3.5 w-3.5" /> Restore
+                          </button>
+                        </form>
+                      ) : (
+                        <form action={archiveTripAction}>
+                          <input type="hidden" name="trip_id" value={t.id} />
+                          <button className="btn-ghost text-xs inline-flex items-center gap-1">
+                            <Archive className="h-3.5 w-3.5" /> Archive
+                          </button>
+                        </form>
                       )}
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      {t.trip_type === "ryder_cup" ? "Ryder Cup" : "Casual"} ·{" "}
-                      {t.location ?? "—"} · join code{" "}
-                      <span className="font-mono">{t.join_code}</span>
-                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {!isActive && (
-                      <form action={switchTripAction}>
-                        <input type="hidden" name="trip_id" value={t.id} />
-                        <button className="btn-ghost text-xs">Make active</button>
-                      </form>
-                    )}
-                    {t.archived ? (
-                      <form action={unarchiveTripAction}>
-                        <input type="hidden" name="trip_id" value={t.id} />
-                        <button className="btn-ghost text-xs inline-flex items-center gap-1">
-                          <ArchiveRestore className="h-3.5 w-3.5" /> Restore
-                        </button>
-                      </form>
-                    ) : (
-                      <form action={archiveTripAction}>
-                        <input type="hidden" name="trip_id" value={t.id} />
-                        <button className="btn-ghost text-xs inline-flex items-center gap-1">
-                          <Archive className="h-3.5 w-3.5" /> Archive
-                        </button>
-                      </form>
-                    )}
-                  </div>
+
+                  <details className="group border-t border-line pt-3">
+                    <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">
+                      <Pencil className="h-3.5 w-3.5" />
+                      Edit details
+                    </summary>
+                    <form action={updateTripAction} className="mt-3 space-y-3">
+                      <input type="hidden" name="trip_id" value={t.id} />
+                      <FormRow>
+                        <Field label="Trip name">
+                          <input className="input" name="name" required defaultValue={t.name} />
+                        </Field>
+                        <Field label="Year">
+                          <input className="input" name="year" type="number" required defaultValue={t.year} />
+                        </Field>
+                      </FormRow>
+                      <Field
+                        label="Trip type"
+                        hint="Switching to Ryder Cup adds the two default teams if you don't have any yet."
+                      >
+                        <select className="input" name="trip_type" defaultValue={t.trip_type}>
+                          <option value="ryder_cup">Ryder Cup</option>
+                          <option value="casual">Casual — per-round formats</option>
+                        </select>
+                      </Field>
+                      <Field label="Location">
+                        <input className="input" name="location" defaultValue={t.location ?? ""} placeholder="Pinehurst, NC" />
+                      </Field>
+                      <FormRow>
+                        <Field label="Start date">
+                          <input className="input" type="date" name="start_date" defaultValue={t.start_date ?? ""} />
+                        </Field>
+                        <Field label="End date">
+                          <input className="input" type="date" name="end_date" defaultValue={t.end_date ?? ""} />
+                        </Field>
+                      </FormRow>
+                      <Field label="Join code" hint="Leave unchanged to keep the current code.">
+                        <input className="input uppercase" name="join_code" defaultValue={t.join_code} maxLength={12} />
+                      </Field>
+                      <SubmitButton className="btn-ghost">Save changes</SubmitButton>
+                    </form>
+                  </details>
                 </li>
               );
             })}

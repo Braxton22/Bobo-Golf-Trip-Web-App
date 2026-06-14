@@ -9,7 +9,6 @@ import {
   addTeeAction,
   deleteTeeAction,
   saveHolesAction,
-  saveYardagesAction,
   upsertCourseAction,
 } from "./actions";
 
@@ -149,12 +148,17 @@ export default async function CourseAdminPage() {
             </form>
           </section>
 
-          {/* 18 holes ----------------------------------------------------- */}
+          {/* 18 holes — par, stroke index, and per-tee yardages --------- */}
           <section className="card space-y-3">
             <header className="flex items-center justify-between">
               <h2 className="font-medium">Holes (par {totalPar})</h2>
-              <span className="text-xs text-muted-foreground">Par 3–6 · Stroke index 1–18</span>
+              <span className="text-xs text-muted-foreground">Par 3–6 · SI 1–18 · yards</span>
             </header>
+            {tees.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                Add a tee above to enter yardages alongside par and stroke index.
+              </p>
+            )}
             <form action={saveHolesAction} className="space-y-3">
               <div className="overflow-x-auto -mx-2 px-2">
                 <table className="w-full text-sm">
@@ -162,82 +166,72 @@ export default async function CourseAdminPage() {
                     <tr className="text-xs uppercase tracking-wide text-muted-foreground">
                       <th className="text-left py-1.5 pr-2">Hole</th>
                       <th className="text-left py-1.5 pr-2">Par</th>
-                      <th className="text-left py-1.5">SI</th>
+                      <th className="text-left py-1.5 pr-2">SI</th>
+                      {tees.map((t) => (
+                        <th key={t.id} className="text-left py-1.5 pr-2">
+                          {t.name}
+                          <span className="block text-[9px] font-normal normal-case text-muted-foreground">
+                            yds
+                          </span>
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {holes.map((h) => (
-                      <tr key={h.id} className="border-t border-line">
-                        <td className="py-2 pr-2 font-medium tabular-nums">{h.hole_number}</td>
-                        <td className="py-2 pr-2">
-                          <input
-                            className="input h-10 w-16 px-2 text-base tabular-nums"
-                            type="number"
-                            min={3}
-                            max={6}
-                            name={`par_${h.hole_number}`}
-                            defaultValue={h.par}
-                            inputMode="numeric"
-                          />
-                        </td>
-                        <td className="py-2">
-                          <input
-                            className="input h-10 w-16 px-2 text-base tabular-nums"
-                            type="number"
-                            min={1}
-                            max={18}
-                            name={`si_${h.hole_number}`}
-                            defaultValue={h.stroke_index}
-                            inputMode="numeric"
-                          />
-                        </td>
-                      </tr>
-                    ))}
+                    {holes.map((h) => {
+                      return (
+                        <tr key={h.id} className="border-t border-line">
+                          <td className="py-2 pr-2 font-medium tabular-nums">{h.hole_number}</td>
+                          <td className="py-2 pr-2">
+                            <input
+                              className="input h-10 w-14 px-2 text-base tabular-nums"
+                              type="number"
+                              min={3}
+                              max={6}
+                              name={`par_${h.hole_number}`}
+                              defaultValue={h.par}
+                              inputMode="numeric"
+                            />
+                          </td>
+                          <td className="py-2 pr-2">
+                            <input
+                              className="input h-10 w-14 px-2 text-base tabular-nums"
+                              type="number"
+                              min={1}
+                              max={18}
+                              name={`si_${h.hole_number}`}
+                              defaultValue={h.stroke_index}
+                              inputMode="numeric"
+                            />
+                          </td>
+                          {tees.map((t) => {
+                            const teeYards = yardages.find(
+                              (y) => y.tee_id === t.id && y.hole_id === h.id
+                            )?.yards;
+                            return (
+                              <td key={t.id} className="py-2 pr-2">
+                                <input
+                                  className="input h-10 w-20 px-2 text-base tabular-nums"
+                                  type="number"
+                                  min={50}
+                                  max={800}
+                                  name={`yards_${t.id}_${h.hole_number}`}
+                                  defaultValue={teeYards ?? ""}
+                                  inputMode="numeric"
+                                  placeholder="—"
+                                />
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
-              <SubmitButton>Save holes</SubmitButton>
+              <SubmitButton>Save holes{tees.length > 0 ? " & yardages" : ""}</SubmitButton>
             </form>
           </section>
-
-          {/* Yardages ---------------------------------------------------- */}
-          {tees.length > 0 && (
-            <section className="space-y-3">
-              <h2 className="font-medium">Yardages</h2>
-              {tees.map((tee) => {
-                const teeYards = new Map(
-                  yardages.filter((y) => y.tee_id === tee.id).map((y) => [y.hole_id, y.yards])
-                );
-                return (
-                  <article key={tee.id} className="card space-y-3">
-                    <header className="font-medium">{tee.name} tees</header>
-                    <form action={saveYardagesAction} className="space-y-3">
-                      <input type="hidden" name="tee_id" value={tee.id} />
-                      <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-                        {holes.map((h) => (
-                          <label key={h.id} className="space-y-1">
-                            <span className="block text-[11px] uppercase tracking-wide text-muted-foreground">
-                              #{h.hole_number}
-                            </span>
-                            <input
-                              className="input h-10 px-2 text-base tabular-nums"
-                              type="number"
-                              min={50}
-                              max={800}
-                              name={`yards_${h.hole_number}`}
-                              defaultValue={teeYards.get(h.id) ?? ""}
-                              inputMode="numeric"
-                            />
-                          </label>
-                        ))}
-                      </div>
-                      <SubmitButton className="btn-ghost">Save {tee.name} yardages</SubmitButton>
-                    </form>
-                  </article>
-                );
-              })}
-            </section>
-          )}
         </>
       )}
     </AdminSection>

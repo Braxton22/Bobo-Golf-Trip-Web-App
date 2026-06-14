@@ -94,6 +94,63 @@ export async function switchTripAction(formData: FormData) {
   redirect("/admin");
 }
 
+/** Edit an existing trip's details. Join code only changes when a new one is
+ *  provided (blank leaves it untouched). Switching to Ryder Cup seeds the two
+ *  default teams if none exist yet. */
+export async function updateTripAction(formData: FormData) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login?next=/admin/trips");
+  if (!isAppAdminEmail(user.email)) redirect("/leaderboard");
+
+  const id = String(formData.get("trip_id") ?? "");
+  if (!id) return;
+
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) redirect("/admin/trips?error=" + encodeURIComponent("Trip name is required."));
+  const year = toNum(formData.get("year"), new Date().getFullYear());
+  const location = String(formData.get("location") ?? "").trim() || null;
+  const startDate = String(formData.get("start_date") ?? "") || null;
+  const endDate = String(formData.get("end_date") ?? "") || null;
+  const tripType = String(formData.get("trip_type") ?? "ryder_cup") === "casual" ? "casual" : "ryder_cup";
+  const joinCode = String(formData.get("join_code") ?? "").trim().toUpperCase();
+
+  const update: Record<string, unknown> = {
+    name,
+    year,
+    location,
+    start_date: startDate,
+    end_date: endDate,
+    trip_type: tripType,
+  };
+  if (joinCode) update.join_code = joinCode;
+
+  const { error } = await supabase.from("trips").update(update).eq("id", id);
+  if (error) {
+    redirect("/admin/trips?error=" + encodeURIComponent(`Couldn't save the trip: ${error.message}`));
+  }
+
+  // Switching to Ryder Cup with no teams yet → seed the two defaults.
+  if (tripType === "ryder_cup") {
+    const { count } = await supabase
+      .from("teams")
+      .select("id", { count: "exact", head: true })
+      .eq("trip_id", id);
+    if ((count ?? 0) === 0) {
+      await supabase.from("teams").insert([
+        { trip_id: id, name: "Team Pine", color: "#0B3D2E" },
+        { trip_id: id, name: "Team Sand", color: "#C8A951" },
+      ]);
+    }
+  }
+
+  revalidatePath("/admin/trips");
+  revalidatePath("/admin");
+  redirect("/admin/trips");
+}
+
 export async function archiveTripAction(formData: FormData) {
   const id = String(formData.get("trip_id") ?? "");
   if (!id) return;

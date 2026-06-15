@@ -59,7 +59,7 @@ export const FORMAT_META: Record<RoundFormat, FormatMeta> = {
     entryRule:
       "ONE gross per hole, entered for the team. Either teammate can post — your partner doesn't need to re-enter.",
     scoringRule:
-      "Team handicap = round(0.35 × lower partner's index + 0.15 × higher partner's index). The two competing teams play off the DIFFERENCE in those handicaps.",
+      "Team handicap = round(0.35 × lower partner's index + 0.15 × higher partner's index). Each team plays off its own handicap, full strokes by stroke index.",
   },
   best_ball_bonus: {
     key: "best_ball_bonus",

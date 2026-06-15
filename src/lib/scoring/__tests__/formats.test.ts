@@ -22,10 +22,9 @@ describe("singlesPerHoleNet", () => {
 });
 
 describe("scrambleMatchPerHole", () => {
-  it("lower team plays scratch, higher gets the diff by SI", () => {
+  it("each team plays off its OWN handicap, full strokes by SI", () => {
     // Team A: 6 + 18 → CH = round(0.35*6 + 0.15*18) = 5
     // Team B: 0 + 4  → CH = round(0.35*0 + 0.15*4) = round(0.6) = 1
-    // diff = 4 → side A receives strokes on SI 1..4
     const { aPerHole, bPerHole, aTeamHandicap, bTeamHandicap } = scrambleMatchPerHole(
       { pair: { a: { player_id: "a1", index: 6 }, b: { player_id: "a2", index: 18 } }, scores: allGross(5) },
       { pair: { a: { player_id: "b1", index: 0 }, b: { player_id: "b2", index: 4 } }, scores: allGross(5) },
@@ -33,13 +32,14 @@ describe("scrambleMatchPerHole", () => {
     );
     expect(aTeamHandicap).toBe(5);
     expect(bTeamHandicap).toBe(1);
-    // A is the higher-handicap team → A receives strokes on SI 1..4
-    const strokedA = TEST_HOLES.filter((h) => h.stroke_index <= 4);
-    for (const h of strokedA) {
-      expect(aPerHole.get(h.hole_number)).toBe(4); // 5 - 1
+    // A receives a stroke on its 5 hardest holes (SI 1..5): net 4 there, 5 elsewhere.
+    for (const h of TEST_HOLES) {
+      expect(aPerHole.get(h.hole_number)).toBe(h.stroke_index <= 5 ? 4 : 5);
     }
-    // B never receives strokes
-    for (const h of TEST_HOLES) expect(bPerHole.get(h.hole_number)).toBe(5);
+    // B receives a stroke on SI 1 only: net 4 there, 5 elsewhere.
+    for (const h of TEST_HOLES) {
+      expect(bPerHole.get(h.hole_number)).toBe(h.stroke_index <= 1 ? 4 : 5);
+    }
   });
 });
 

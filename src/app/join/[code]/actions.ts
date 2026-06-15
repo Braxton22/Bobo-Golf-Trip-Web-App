@@ -62,6 +62,12 @@ export async function joinTripAction(formData: FormData) {
       handicap_index: handicap,
       venmo_username: venmo,
     });
+    // Announce the new arrival in the feed.
+    await supabase.from("activity_events").insert({
+      trip_id: trip.id,
+      type: "player_joined",
+      payload: { name },
+    });
   }
 
   // Reflect on the user's profile too.

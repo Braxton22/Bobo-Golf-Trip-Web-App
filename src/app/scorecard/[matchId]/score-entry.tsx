@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Cloud, Wifi, WifiOff } from "lucide-react";
 import { useScoreQueue, type ScoreWrite } from "@/lib/score-queue";
-import { upsertScore } from "../actions";
+import { deleteScore, upsertScore } from "../actions";
 import {
   allocateStrokes,
   bestBallBonusPerHole,
@@ -13,7 +13,13 @@ import {
   toParTone,
 } from "@/lib/scoring";
 import type { HoleScore } from "@/lib/scoring/types";
-import { HoleRow, indicatorFor, type SyncIndicator } from "@/components/score/hole-entry";
+import {
+  HoleRow,
+  indicatorFor,
+  Stepper,
+  SyncDot,
+  type SyncIndicator,
+} from "@/components/score/hole-entry";
 
 type Hole = { hole_number: number; par: number; stroke_index: number };
 type SidePlayer = { id: string; name: string; handicap_index: number; user_id: string | null };
@@ -100,7 +106,15 @@ export function ScoreEntry({ round, match, mySide, isAdmin, players, holes, init
       else next.set(localKey, gross);
       return next;
     });
-    if (gross == null) return; // deletion path could be added later
+    if (gross == null) {
+      // Clear the hole — delete the row server-side. (Best-effort; clearing is
+      // an online action. Once a round's last score is cleared, betting on that
+      // round unlocks again.)
+      deleteScore({ round_id: round.id, match_id: match.id, player_id, team_side, hole_number }).catch(
+        () => undefined
+      );
+      return;
+    }
     enqueue({
       round_id: round.id,
       match_id: match.id,
@@ -473,27 +487,118 @@ function BestBallEntry({
   return (
     <section className="space-y-3">
       <h2 className="label">Best ball + bonus · each partner enters their own</h2>
+      <p className="-mt-1 text-[11px] text-muted-foreground">
+        Both partners share a row per hole — no scrolling to reach the second player.
+      </p>
       {sides.map(({ label, players: sps }) => (
-        <article key={label} className="card space-y-3">
-          <h3 className="font-medium">{label}</h3>
-          {sps.map((p) => (
-            <div key={p.id} className="space-y-1.5">
-              <p className="text-sm font-medium">
-                {p.name}{" "}
-                <span className="text-xs text-muted-foreground">idx {p.handicap_index.toFixed(1)}</span>
-              </p>
-              <PlayerHoleList
-                player={p}
-                holes={holes}
-                scores={scores}
-                statusFor={statusFor}
-                writeHole={writeHole}
-              />
-            </div>
-          ))}
-        </article>
+        <BestBallSideGrid
+          key={label}
+          label={label}
+          players={sps}
+          holes={holes}
+          scores={scores}
+          statusFor={statusFor}
+          writeHole={writeHole}
+        />
       ))}
     </section>
+  );
+}
+
+/**
+ * Hole-major grid for one best-ball side: 18 rows, one column per partner.
+ * Both partners for a given hole sit on the same row, so entering the second
+ * (or fourth) player's score no longer means scrolling past a full 18-hole
+ * list. Scrolls horizontally on very narrow screens rather than breaking.
+ */
+function BestBallSideGrid({
+  label,
+  players,
+  holes,
+  scores,
+  statusFor,
+  writeHole,
+}: {
+  label: string;
+  players: SidePlayer[];
+  holes: Hole[];
+  scores: Map<string, number>;
+  statusFor: (k: string) => SyncIndicator;
+  writeHole: WriteHole;
+}) {
+  const strokeMaps = players.map((p) =>
+    allocateStrokes(courseHandicap({ index: p.handicap_index }, { holes }, "simple"), holes)
+  );
+
+  return (
+    <article className="card space-y-2">
+      <h3 className="font-medium">{label}</h3>
+      {players.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No players on this side.</p>
+      ) : (
+        <div className="overflow-x-auto -mx-2 px-2">
+          <div className="min-w-max">
+            {/* Column header */}
+            <div className="flex items-end gap-2 border-b border-line pb-1.5">
+              <div className="w-11 shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
+                Hole
+              </div>
+              {players.map((p) => (
+                <div key={p.id} className="w-[150px] shrink-0 text-center text-sm font-medium">
+                  {p.name}
+                  <span className="block text-[10px] font-normal text-muted-foreground">
+                    idx {p.handicap_index.toFixed(1)}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <ul className="divide-y divide-line">
+              {holes.map((h) => (
+                <li key={h.hole_number} className="flex items-center gap-2 py-2">
+                  <div className="w-11 shrink-0">
+                    <div className="font-serif text-base font-semibold tabular-nums">{h.hole_number}</div>
+                    <div className="text-[10px] text-muted-foreground">
+                      P{h.par}·SI{h.stroke_index}
+                    </div>
+                  </div>
+                  {players.map((p, idx) => {
+                    const k = `${p.id}|${h.hole_number}`;
+                    const v = scores.get(k) ?? null;
+                    const received = strokeMaps[idx].get(h.hole_number) ?? 0;
+                    const net = v != null ? v - received : null;
+                    return (
+                      <div key={p.id} className="flex w-[150px] shrink-0 flex-col items-center gap-1">
+                        <Stepper
+                          value={v}
+                          onChange={(gross) =>
+                            writeHole({
+                              player_id: p.id,
+                              team_side: null,
+                              hole_number: h.hole_number,
+                              gross,
+                            })
+                          }
+                          ariaLabel={`${p.name} hole ${h.hole_number} gross`}
+                        />
+                        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                          {received > 0 && (
+                            <span className="rounded-full bg-[hsl(var(--gold))]/20 px-1.5 text-[hsl(var(--ink))]">
+                              +{received}
+                            </span>
+                          )}
+                          {net != null && <span>net {net}</span>}
+                          <SyncDot status={statusFor(k)} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+    </article>
   );
 }
 

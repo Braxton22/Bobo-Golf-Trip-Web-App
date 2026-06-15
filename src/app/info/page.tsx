@@ -262,7 +262,9 @@ export default async function InfoPage() {
             </ul>
           )}
           {lodging.notes && (
-            <p className="rounded-xl bg-background/40 p-3 text-sm whitespace-pre-wrap">{lodging.notes}</p>
+            <p className="rounded-xl bg-background/40 p-3 text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+              {lodging.notes}
+            </p>
           )}
         </section>
       )}

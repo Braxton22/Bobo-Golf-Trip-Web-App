@@ -667,14 +667,21 @@ function TeamMatchList({
         const b = m.side_b.map((id) => playerById.get(id)?.name).filter(Boolean).join(" & ");
         const teamA = teams.find((t) => t.id === m.team_a_id);
         const teamB = teams.find((t) => t.id === m.team_b_id);
+        // Team name for Ryder Cup matches; player names for casual singles/match play.
+        const status = pts
+          ? matchStatusText(pts, teamA?.name ?? (a || "Side A"), teamB?.name ?? (b || "Side B"))
+          : null;
+        const statusColor =
+          status?.tone === "A" || status?.tone === "B" ? "text-primary" : "text-muted-foreground";
         return (
           <li key={m.id} className="card space-y-2">
             <header className="flex items-baseline justify-between gap-3">
               <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
                 Match {m.match_number}
               </span>
-              <span className="font-serif text-sm font-semibold">
-                {pts?.scoreline ?? "—"}
+              <span className={`font-serif text-sm font-semibold ${statusColor}`}>
+                {status?.final ? "✓ " : ""}
+                {status?.text ?? "—"}
               </span>
             </header>
 
@@ -752,6 +759,7 @@ function SinglesBoard({
 // ---------------------------------------------------------------------------
 
 type SideNet = { toPar: number | null; thru: number };
+type Decided = { winner: "A" | "B" | "halve"; margin?: { up: number; toGo: number } } | null;
 type MatchPoints = {
   team_a_points: number;
   team_b_points: number;
@@ -759,7 +767,34 @@ type MatchPoints = {
   scoreline: string;
   sideA: SideNet;
   sideB: SideNet;
+  up: number; // signed, + = side A is up
+  thru: number;
+  decided: Decided;
 };
+
+/**
+ * Team-attributed match-play status, e.g. "Team USA 1 UP · thru 14",
+ * "All square · thru 9", or final "Team USA 3 & 2" / "Halved". Tone says which
+ * side leads so the board can color it.
+ */
+function matchStatusText(
+  pts: MatchPoints,
+  teamAName: string,
+  teamBName: string
+): { text: string; tone: "A" | "B" | "even"; final: boolean } {
+  const name = (s: "A" | "B") => (s === "A" ? teamAName : teamBName);
+  if (pts.decided) {
+    const w = pts.decided.winner;
+    if (w === "halve") return { text: "Halved", tone: "even", final: true };
+    const m = pts.decided.margin;
+    const margin = m ? (m.toGo === 0 ? `${m.up} UP` : `${m.up} & ${m.toGo}`) : "wins";
+    return { text: `${name(w)} ${margin}`, tone: w, final: true };
+  }
+  if (pts.thru === 0) return { text: "Not started", tone: "even", final: false };
+  if (pts.up === 0) return { text: `All square · thru ${pts.thru}`, tone: "even", final: false };
+  const side: "A" | "B" = pts.up > 0 ? "A" : "B";
+  return { text: `${name(side)} ${Math.abs(pts.up)} UP · thru ${pts.thru}`, tone: side, final: false };
+}
 
 /** Sum a per-hole net map against par-played to get net-to-par. */
 function netToPar(perHole: Map<number, number>, course: ScCourse): SideNet {
@@ -807,6 +842,9 @@ function computeMatchPoints(
       scoreline: res.scoreline,
       sideA: netToPar(aPerHole, course),
       sideB: netToPar(bPerHole, course),
+      up: prog.upDown,
+      thru: prog.thru,
+      decided: prog.decided,
     };
   }
 
@@ -835,6 +873,9 @@ function computeMatchPoints(
       scoreline: res.scoreline,
       sideA: netToPar(aPerHole, course),
       sideB: netToPar(bPerHole, course),
+      up: prog.upDown,
+      thru: prog.thru,
+      decided: prog.decided,
     };
   }
 
@@ -859,6 +900,9 @@ function computeMatchPoints(
     scoreline: res.scoreline,
     sideA: netToPar(aPerHole, course),
     sideB: netToPar(bPerHole, course),
+    up: prog.upDown,
+    thru: prog.thru,
+    decided: prog.decided,
   };
 }
 

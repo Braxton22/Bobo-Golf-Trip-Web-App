@@ -27,14 +27,11 @@ export function singlesPerHoleNet(
 // ---------------------------------------------------------------------------
 // SCRAMBLE (Day 1)
 // ---------------------------------------------------------------------------
-// Teams enter ONE gross per hole. We compute the team's "course handicap" via
-// scrambleTeamHandicap, then the MATCH plays off the DIFFERENCE between the
-// two competing teams' handicaps:
-//
-//   diff = max(0, sideAHandicap - sideBHandicap)   (signed for the receiving side)
-//
-// The higher-handicap team gets the difference, allocated by stroke index.
-// Lower-handicap team plays scratch. Result = per-hole net for each side.
+// Teams enter ONE gross per hole. Each team's "course handicap" =
+// round(0.35 × lower partner's index + 0.15 × higher partner's index), and
+// EACH team plays off its OWN handicap — full strokes allocated by stroke
+// index. (Previously the match played off the difference; now both sides take
+// their own strokes.) Result = per-hole net for each side.
 // ---------------------------------------------------------------------------
 
 export type ScrambleSide = {
@@ -56,20 +53,17 @@ export function scrambleMatchPerHole(
   const aH = scrambleTeamHandicap(sideA.pair.a.index, sideA.pair.b.index, allowance);
   const bH = scrambleTeamHandicap(sideB.pair.a.index, sideB.pair.b.index, allowance);
 
-  // Lower team plays scratch; higher team gets the diff allocated by SI.
-  const diff = Math.abs(aH - bH);
-  const receivingSide: "A" | "B" = aH > bH ? "A" : "B";
-  const strokes = allocateStrokes(diff, course.holes);
+  // Each team gets its OWN handicap allocated by stroke index.
+  const aStrokes = allocateStrokes(aH, course.holes);
+  const bStrokes = allocateStrokes(bH, course.holes);
 
   const aPerHole = new Map<number, number>();
   for (const s of sideA.scores) {
-    const received = receivingSide === "A" ? (strokes.get(s.hole_number) ?? 0) : 0;
-    aPerHole.set(s.hole_number, s.gross - received);
+    aPerHole.set(s.hole_number, s.gross - (aStrokes.get(s.hole_number) ?? 0));
   }
   const bPerHole = new Map<number, number>();
   for (const s of sideB.scores) {
-    const received = receivingSide === "B" ? (strokes.get(s.hole_number) ?? 0) : 0;
-    bPerHole.set(s.hole_number, s.gross - received);
+    bPerHole.set(s.hole_number, s.gross - (bStrokes.get(s.hole_number) ?? 0));
   }
 
   return { aPerHole, bPerHole, aTeamHandicap: aH, bTeamHandicap: bH };

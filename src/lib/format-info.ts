@@ -25,7 +25,7 @@ export const FORMATS: FormatInfo[] = [
     entryRule:
       "ONE gross per hole, entered for the team. Either teammate can post — your partner doesn't need to re-enter.",
     scoringRule:
-      "Team handicap = round(0.35 × lower partner's index + 0.15 × higher partner's index). The two competing teams play off the DIFFERENCE in those handicaps: the lower team plays scratch, the higher team gets the difference allocated by stroke index.",
+      "Team handicap = round(0.35 × lower partner's index + 0.15 × higher partner's index). EACH team plays off its own handicap — full strokes allocated by stroke index. Team net per hole = team gross − strokes received on that hole.",
     matchRule:
       "Lower team net score wins the hole. Match play — track UP/DOWN through 18. Each match worth 1 point.",
   },

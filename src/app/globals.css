@@ -3,28 +3,28 @@
 @tailwind utilities;
 
 /* ---------------------------------------------------------------------------
-   Design tokens — pure OLED dark only. Light theme retired (see spec §8
-   conversation 2026-06-10). Tokens are HSL channels so utilities like
-   `bg-background/80` compose normally.
+   Design tokens. Dark is the default (pure OLED black + warm cream text);
+   adding `.light` to <html> swaps to a cream/parchment Augusta palette. The
+   theme toggle in the header writes this class via localStorage. Tokens are
+   HSL channels so utilities like `bg-background/80` compose normally.
    --------------------------------------------------------------------------- */
 @layer base {
   :root {
-    /* Pure-black base for OLED. Cards sit just above the background so the
-       hairline border is visible without resorting to elevation/shadow. */
+    /* --- Dark (default) ------------------------------------------------ */
     --background: 0 0% 0%;
-    --foreground: 45 35% 94%;       /* warm cream-white */
+    --foreground: 45 35% 94%;
     --card: 0 0% 6%;
     --card-foreground: 45 35% 94%;
     --popover: 0 0% 8%;
     --popover-foreground: 45 35% 94%;
 
-    --primary: 152 52% 46%;          /* Augusta green, brighter for black bg */
+    --primary: 152 52% 46%;
     --primary-foreground: 0 0% 0%;
     --secondary: 0 0% 12%;
     --secondary-foreground: 45 35% 94%;
     --muted: 0 0% 10%;
     --muted-foreground: 45 8% 68%;
-    --accent: 43 70% 58%;            /* gold accent */
+    --accent: 43 70% 58%;
     --accent-foreground: 0 0% 0%;
     --destructive: 4 80% 60%;
     --destructive-foreground: 0 0% 0%;
@@ -34,12 +34,10 @@
     --ring: 152 52% 46%;
     --radius: 1rem;
 
-    /* Scoreboard tokens — Masters-board red for under par. */
     --score-under: 4 82% 62%;
     --score-over:  45 35% 94%;
     --score-even:  45 8% 68%;
 
-    /* Legacy aliases used by a few components — match the new palette. */
     --green:        152 52% 46%;
     --green-soft:   150 40% 40%;
     --gold:         43 70% 58%;
@@ -50,6 +48,41 @@
     --safe-bottom: env(safe-area-inset-bottom, 0px);
   }
 
+  /* --- Light (Augusta cream / parchment) ----------------------------- */
+  html.light {
+    --background: 43 47% 96%;        /* Augusta cream */
+    --foreground: 152 30% 14%;
+    --card: 43 47% 99%;
+    --card-foreground: 152 30% 14%;
+    --popover: 43 47% 99%;
+    --popover-foreground: 152 30% 14%;
+
+    --primary: 152 50% 22%;           /* deeper Augusta green for contrast */
+    --primary-foreground: 43 47% 96%;
+    --secondary: 43 30% 90%;
+    --secondary-foreground: 152 30% 14%;
+    --muted: 43 30% 92%;
+    --muted-foreground: 152 12% 36%;
+    --accent: 43 70% 48%;
+    --accent-foreground: 152 30% 14%;
+    --destructive: 4 70% 42%;
+    --destructive-foreground: 43 47% 96%;
+
+    --border: 43 22% 84%;
+    --input: 43 22% 84%;
+    --ring: 152 50% 22%;
+
+    --score-under: 4 72% 42%;         /* Masters-board red, slightly muted for paper */
+    --score-over:  152 30% 14%;
+    --score-even:  152 12% 36%;
+
+    --green:        152 50% 22%;
+    --green-soft:   150 40% 30%;
+    --gold:         43 70% 40%;
+    --line:         43 22% 84%;
+    --ink:          152 30% 14%;
+  }
+
   * {
     @apply border-border;
   }
@@ -57,6 +90,9 @@
   html, body {
     overscroll-behavior-y: none;
     color-scheme: dark;
+  }
+  html.light, html.light body {
+    color-scheme: light;
   }
 
   body {

@@ -19,6 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ThemeToggle } from "./theme-toggle";
 
 type SiteHeaderProps = {
   isSignedIn: boolean;
@@ -76,15 +77,18 @@ export function SiteHeader({ isSignedIn, isAdmin = false, signOut }: SiteHeaderP
             </span>
           </Link>
 
-          <button
-            type="button"
-            aria-label={open ? "Close menu" : "Open menu"}
-            aria-expanded={open}
-            onClick={() => setOpen((o) => !o)}
-            className="tap rounded-full border border-border bg-card text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {open ? <Menu className="h-5 w-5 rotate-90 transition-transform" /> : <Menu className="h-5 w-5 transition-transform" />}
-          </button>
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <button
+              type="button"
+              aria-label={open ? "Close menu" : "Open menu"}
+              aria-expanded={open}
+              onClick={() => setOpen((o) => !o)}
+              className="tap rounded-full border border-border bg-card text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {open ? <Menu className="h-5 w-5 rotate-90 transition-transform" /> : <Menu className="h-5 w-5 transition-transform" />}
+            </button>
+          </div>
         </div>
       </header>
 

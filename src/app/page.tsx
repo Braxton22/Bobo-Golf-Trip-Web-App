@@ -15,15 +15,22 @@ import { getActiveTrip } from "@/lib/trip-context";
 import { autoLinkPlayers } from "@/lib/ensure-profile";
 import { buildFeedItems, FEED_COLOR, FEED_ICON, relTime } from "@/lib/feed";
 import {
+  bestBallBonusPerHole,
+  computeCupStandings,
   computeRoundLeaderboard,
   formatToPar,
+  matchResult,
+  runMatchPlay,
+  scrambleMatchPerHole,
+  singlesPerHoleNet,
   toParTone,
   type Course as ScCourse,
   type HoleScore,
 } from "@/lib/scoring";
 import { FORMAT_LABEL } from "@/lib/trip-formats";
-import type { Hole, Photo, Player, Round, Score } from "@/lib/db";
+import type { Hole, Match, Photo, Player, Round, Score, Team } from "@/lib/db";
 import { LeaderboardTicker, type TickerRow } from "@/components/home/leaderboard-ticker";
+import { RealtimeRefresh } from "@/app/leaderboard/realtime-refresh";
 
 export default async function Home() {
   const supabase = await createClient();
@@ -50,59 +57,91 @@ export default async function Home() {
     );
   }
 
-  // ---- Rolling leaderboard: the active round's net board ------------------
-  const [{ data: roundsRaw }, { data: playersRaw }] = await Promise.all([
+  // ---- Leaderboard preview: Ryder Cup → USA vs Europe total points;
+  //      casual → rolling net-to-par ticker of the active round. ------------
+  const [{ data: roundsRaw }, { data: playersRaw }, { data: teamsRaw }] = await Promise.all([
     supabase.from("rounds").select("*").eq("trip_id", trip.id).order("day_number"),
     supabase.from("players").select("*").eq("trip_id", trip.id),
+    supabase.from("teams").select("*").eq("trip_id", trip.id).order("created_at"),
   ]);
   const rounds = (roundsRaw ?? []) as Round[];
   const players = (playersRaw ?? []) as Player[];
+  const teams = (teamsRaw ?? []) as Team[];
 
   let scores: Score[] = [];
+  let matches: Match[] = [];
   if (rounds.length > 0) {
-    const { data } = await supabase
-      .from("scores")
-      .select("*")
-      .in("round_id", rounds.map((r) => r.id));
-    scores = (data ?? []) as Score[];
+    const roundIds = rounds.map((r) => r.id);
+    const [{ data: sData }, { data: mData }] = await Promise.all([
+      supabase.from("scores").select("*").in("round_id", roundIds),
+      supabase.from("matches").select("*").in("round_id", roundIds),
+    ]);
+    scores = (sData ?? []) as Score[];
+    matches = (mData ?? []) as Match[];
   }
 
   // Active round = most recent round that has any score, else the first.
   const activeRound =
     [...rounds].reverse().find((r) => scores.some((s) => s.round_id === r.id)) ?? rounds[0] ?? null;
 
-  let holes: Hole[] = [];
-  if (activeRound?.course_id) {
+  // Holes per course (trips can play a different course each day).
+  const courseIds = [...new Set(rounds.map((r) => r.course_id).filter(Boolean))] as string[];
+  let allHoles: Hole[] = [];
+  if (courseIds.length > 0) {
     const { data } = await supabase
       .from("holes")
       .select("*")
-      .eq("course_id", activeRound.course_id)
+      .in("course_id", courseIds)
       .order("hole_number");
-    holes = (data ?? []) as Hole[];
+    allHoles = (data ?? []) as Hole[];
   }
-  const course: ScCourse = { holes };
+  const holesByCourse = new Map<string, Hole[]>();
+  for (const h of allHoles) (holesByCourse.get(h.course_id) ?? holesByCourse.set(h.course_id, []).get(h.course_id)!).push(h);
+  const courseFor = (r: Round | undefined): ScCourse => ({
+    holes: r?.course_id ? holesByCourse.get(r.course_id) ?? [] : [],
+  });
 
+  const isRyder = trip.trip_type === "ryder_cup";
+
+  // Ryder Cup preview = USA vs Europe cup standings (matches across the trip).
+  const cup = isRyder
+    ? computeCupStandings(
+        matches
+          .map((m) => matchPointsFor(m, rounds, scores, players, courseFor))
+          .filter(Boolean) as { team_a_points: number; team_b_points: number }[],
+        {
+          pointsToWin: Number(trip.points_to_win),
+          totalPoints: trip.total_points,
+          tieOutcomeLabel: trip.tie_outcome_label,
+        }
+      )
+    : null;
+
+  // Casual preview = per-player rolling ticker (unchanged behavior).
   let tickerRows: TickerRow[] = [];
-  if (activeRound && holes.length > 0) {
-    const scoresByPlayer: Record<string, HoleScore[]> = {};
-    for (const s of scores.filter((s) => s.round_id === activeRound.id)) {
-      if (!s.player_id) continue;
-      (scoresByPlayer[s.player_id] ??= []).push({ hole_number: s.hole_number, gross: s.gross });
+  if (!isRyder && activeRound) {
+    const activeCourse = courseFor(activeRound);
+    if (activeCourse.holes.length > 0) {
+      const scoresByPlayer: Record<string, HoleScore[]> = {};
+      for (const s of scores.filter((s) => s.round_id === activeRound.id)) {
+        if (!s.player_id) continue;
+        (scoresByPlayer[s.player_id] ??= []).push({ hole_number: s.hole_number, gross: s.gross });
+      }
+      const board = computeRoundLeaderboard(
+        players.map((p) => ({ id: p.id, name: p.name, index: Number(p.handicap_index) })),
+        scoresByPlayer,
+        activeCourse
+      );
+      tickerRows = board
+        .filter((r) => r.thru > 0)
+        .map((r) => ({
+          player_id: r.player_id,
+          name: r.name,
+          scoreText: formatToPar(r.toPar),
+          tone: toParTone(r.toPar),
+          thru: r.thru,
+        }));
     }
-    const board = computeRoundLeaderboard(
-      players.map((p) => ({ id: p.id, name: p.name, index: Number(p.handicap_index) })),
-      scoresByPlayer,
-      course
-    );
-    tickerRows = board
-      .filter((r) => r.thru > 0)
-      .map((r) => ({
-        player_id: r.player_id,
-        name: r.name,
-        scoreText: formatToPar(r.toPar),
-        tone: toParTone(r.toPar),
-        thru: r.thru,
-      }));
   }
 
   // ---- News + photos -----------------------------------------------------
@@ -126,6 +165,10 @@ export default async function Home() {
 
   return (
     <div className="space-y-7">
+      {/* Live updates: any score, match, or bet change re-fetches the page
+          so the leaderboard preview reflects "USA goes 1 UP" in real time. */}
+      <RealtimeRefresh tripId={trip.id} roundIds={rounds.map((r) => r.id)} />
+
       {/* Title */}
       <header className="space-y-0.5">
         <h1 className="font-serif text-3xl font-semibold leading-tight">{trip.name}</h1>
@@ -135,14 +178,33 @@ export default async function Home() {
         </p>
       </header>
 
-      {/* Rolling leaderboard */}
+      {/* Leaderboard preview */}
       <section className="space-y-2">
         <SectionHead
           title="Leaderboard"
           href="/leaderboard"
-          hint={activeRound ? `Day ${activeRound.day_number} — ${FORMAT_LABEL[activeRound.format]}` : undefined}
+          hint={
+            cup
+              ? cup.status === "decided" || cup.status === "tie"
+                ? "Final · tap for matches"
+                : `${cup.pointsRemaining} pts remaining`
+              : activeRound
+                ? `Day ${activeRound.day_number} — ${FORMAT_LABEL[activeRound.format]}`
+                : undefined
+          }
         />
-        {tickerRows.length > 0 ? (
+        {cup ? (
+          <Link
+            href="/leaderboard"
+            className="card flex items-center justify-center gap-3 text-center transition hover:shadow-lift"
+          >
+            <CupSide name={teams[0]?.name ?? "USA"} points={cup.teamAPoints} highlight={cup.winner === "A"} />
+            <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+              {cup.status === "decided" ? "Final" : cup.status === "tie" ? "Tied" : "vs"}
+            </div>
+            <CupSide name={teams[1]?.name ?? "Europe"} points={cup.teamBPoints} highlight={cup.winner === "B"} />
+          </Link>
+        ) : tickerRows.length > 0 ? (
           <LeaderboardTicker rows={tickerRows} />
         ) : (
           <Link
@@ -235,6 +297,105 @@ export default async function Home() {
 }
 
 // ---------------------------------------------------------------------------
+
+function CupSide({ name, points, highlight }: { name: string; points: number; highlight: boolean }) {
+  const display = (() => {
+    const whole = Math.trunc(points);
+    return Math.abs(points - whole) >= 0.4999 ? `${whole}½` : `${whole}`;
+  })();
+  return (
+    <div className={`flex-1 ${highlight ? "rounded-xl bg-primary/10 py-1.5" : ""}`}>
+      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{name}</p>
+      <p className="font-serif text-3xl font-semibold tabular-nums">{display}</p>
+    </div>
+  );
+}
+
+function matchPointsFor(
+  m: Match,
+  rounds: Round[],
+  scores: Score[],
+  players: Player[],
+  courseFor: (r: Round | undefined) => ScCourse
+): { team_a_points: number; team_b_points: number } | null {
+  const round = rounds.find((r) => r.id === m.round_id);
+  if (!round) return null;
+  const course = courseFor(round);
+  const playerById = new Map(players.map((p) => [p.id, p]));
+  const ms = scores.filter((s) => s.match_id === m.id);
+
+  let aPerHole: Map<number, number> | undefined;
+  let bPerHole: Map<number, number> | undefined;
+  if (round.format === "scramble") {
+    const aScores: HoleScore[] = ms.filter((s) => s.team_side === "A").map((s) => ({ hole_number: s.hole_number, gross: s.gross }));
+    const bScores: HoleScore[] = ms.filter((s) => s.team_side === "B").map((s) => ({ hole_number: s.hole_number, gross: s.gross }));
+    const a = playerById.get(m.side_a[0]);
+    const b = playerById.get(m.side_a[1] ?? m.side_a[0]);
+    const c = playerById.get(m.side_b[0]);
+    const d = playerById.get(m.side_b[1] ?? m.side_b[0]);
+    const out = scrambleMatchPerHole(
+      {
+        pair: {
+          a: { player_id: a?.id ?? m.side_a[0], index: Number(a?.handicap_index ?? 0) },
+          b: { player_id: b?.id ?? m.side_a[1] ?? m.side_a[0], index: Number(b?.handicap_index ?? 0) },
+        },
+        scores: aScores,
+      },
+      {
+        pair: {
+          a: { player_id: c?.id ?? m.side_b[0], index: Number(c?.handicap_index ?? 0) },
+          b: { player_id: d?.id ?? m.side_b[1] ?? m.side_b[0], index: Number(d?.handicap_index ?? 0) },
+        },
+        scores: bScores,
+      },
+      course
+    );
+    aPerHole = out.aPerHole;
+    bPerHole = out.bPerHole;
+  } else if (round.format === "best_ball_bonus") {
+    const aBy: Record<string, HoleScore[]> = {};
+    const bBy: Record<string, HoleScore[]> = {};
+    for (const s of ms) {
+      if (!s.player_id) continue;
+      const target = m.side_a.includes(s.player_id) ? aBy : bBy;
+      (target[s.player_id] ??= []).push({ hole_number: s.hole_number, gross: s.gross });
+    }
+    const aA = playerById.get(m.side_a[0]);
+    const aB = playerById.get(m.side_a[1] ?? m.side_a[0]);
+    const bA = playerById.get(m.side_b[0]);
+    const bB = playerById.get(m.side_b[1] ?? m.side_b[0]);
+    aPerHole = bestBallBonusPerHole(
+      {
+        pair: {
+          a: { player_id: aA?.id ?? m.side_a[0], index: Number(aA?.handicap_index ?? 0) },
+          b: { player_id: aB?.id ?? m.side_a[1] ?? m.side_a[0], index: Number(aB?.handicap_index ?? 0) },
+        },
+        scoresByPlayer: aBy,
+      },
+      course
+    );
+    bPerHole = bestBallBonusPerHole(
+      {
+        pair: {
+          a: { player_id: bA?.id ?? m.side_b[0], index: Number(bA?.handicap_index ?? 0) },
+          b: { player_id: bB?.id ?? m.side_b[1] ?? m.side_b[0], index: Number(bB?.handicap_index ?? 0) },
+        },
+        scoresByPlayer: bBy,
+      },
+      course
+    );
+  } else {
+    const a = playerById.get(m.side_a[0]);
+    const b = playerById.get(m.side_b[0]);
+    if (!a || !b) return null;
+    const aScores = ms.filter((s) => s.player_id === a.id).map((s) => ({ hole_number: s.hole_number, gross: s.gross }));
+    const bScores = ms.filter((s) => s.player_id === b.id).map((s) => ({ hole_number: s.hole_number, gross: s.gross }));
+    aPerHole = singlesPerHoleNet(Number(a.handicap_index), aScores, course);
+    bPerHole = singlesPerHoleNet(Number(b.handicap_index), bScores, course);
+  }
+  const res = matchResult(runMatchPlay(aPerHole, bPerHole));
+  return { team_a_points: res.points.a, team_b_points: res.points.b };
+}
 
 function SectionHead({ title, href, hint }: { title: string; href: string; hint?: string }) {
   return (

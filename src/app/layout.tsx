@@ -6,6 +6,7 @@ import { signOut } from "./actions";
 import { SiteHeader } from "@/components/layout/site-header";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { BackToHome } from "@/components/layout/back-to-home";
+import { ThemePrepaintScript } from "@/components/layout/theme-toggle";
 import { PWARegister } from "@/components/pwa-register";
 import { isAppAdminEmail } from "@/lib/app-admin";
 
@@ -39,8 +40,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#000000",
-  colorScheme: "dark",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#FBF8F1" },
+    { media: "(prefers-color-scheme: dark)", color: "#000000" },
+  ],
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
@@ -54,9 +57,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html
       lang="en"
-      className={`dark ${sans.variable} ${serif.variable}`}
-      style={{ colorScheme: "dark" }}
+      suppressHydrationWarning
+      className={`${sans.variable} ${serif.variable}`}
     >
+      <head>
+        <ThemePrepaintScript />
+      </head>
       <body>
         <div className="flex min-h-screen flex-col bg-background">
           <SiteHeader isSignedIn={!!user} isAdmin={isAdmin} signOut={signOut} />

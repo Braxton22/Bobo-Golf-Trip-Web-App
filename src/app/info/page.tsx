@@ -95,7 +95,7 @@ export default async function InfoPage() {
       forecast = await fetchForecast({
         latitude: Number(weatherCourse.latitude),
         longitude: Number(weatherCourse.longitude),
-        days: 3,
+        days: 5,
       });
     } catch {
       forecast = [];
@@ -119,9 +119,14 @@ export default async function InfoPage() {
             <h2 className="font-medium">Forecast</h2>
             <span className="text-[11px] text-muted-foreground">Open-Meteo</span>
           </header>
-          <ul className="grid grid-cols-3 gap-2">
+          {/* Horizontal scroll on mobile so 5 days fit; 5-column grid on
+              larger screens. */}
+          <ul className="no-scrollbar -mx-2 flex gap-2 overflow-x-auto px-2 sm:mx-0 sm:grid sm:grid-cols-5 sm:overflow-visible sm:px-0">
             {forecast.map((d) => (
-              <li key={d.date} className="rounded-xl border border-line bg-background/40 p-3 text-center">
+              <li
+                key={d.date}
+                className="shrink-0 basis-[7.5rem] rounded-xl border border-line bg-background/40 p-3 text-center sm:basis-auto"
+              >
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
                   {new Date(d.date).toLocaleDateString(undefined, { weekday: "short" })}
                 </p>

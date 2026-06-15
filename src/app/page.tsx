@@ -187,9 +187,9 @@ export default async function Home() {
       </section>
 
       {/* Photo reel */}
-      {photoItems.length > 0 && (
-        <section className="space-y-2">
-          <SectionHead title="Photos" href="/photos" hint="The gallery" />
+      <section className="space-y-2">
+        <SectionHead title="Photos" href="/photos" hint="The gallery" />
+        {photoItems.length > 0 ? (
           <ul className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:px-0">
             {photoItems.map(({ photo, url }) => (
               <li
@@ -212,8 +212,16 @@ export default async function Home() {
               </li>
             ))}
           </ul>
-        </section>
-      )}
+        ) : (
+          <Link
+            href="/photos"
+            className="card flex items-center gap-3 text-sm text-muted-foreground transition hover:shadow-lift"
+          >
+            <Camera className="h-5 w-5 text-primary" />
+            No photos yet — tap to add the first one.
+          </Link>
+        )}
+      </section>
 
       {/* Section cards */}
       <section className="grid grid-cols-2 gap-3">

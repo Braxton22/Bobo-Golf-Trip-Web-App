@@ -29,6 +29,7 @@ import type {
 } from "@/lib/db";
 import { FORMAT_LABEL } from "@/lib/trip-formats";
 import { fetchForecast, type DayForecast } from "@/lib/weather";
+import { Linkify } from "@/lib/linkify";
 
 export default async function InfoPage() {
   const supabase = await createClient();
@@ -277,15 +278,28 @@ export default async function InfoPage() {
                   </p>
                 </div>
                 {course.latitude != null && course.longitude != null && (
-                  <a
-                    href={`https://maps.google.com/?q=${course.latitude},${course.longitude}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn-ghost inline-flex shrink-0 items-center gap-1.5 text-xs"
-                  >
-                    <MapPin className="h-3.5 w-3.5" />
-                    Map
-                  </a>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <a
+                      href={`https://maps.apple.com/?ll=${course.latitude},${course.longitude}&q=${encodeURIComponent(course.name)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-ghost inline-flex items-center gap-1.5 text-xs"
+                      title="Open in Apple Maps"
+                    >
+                      <MapPin className="h-3.5 w-3.5" />
+                      Apple
+                    </a>
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${course.latitude},${course.longitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-ghost inline-flex items-center gap-1.5 text-xs"
+                      title="Open in Google Maps"
+                    >
+                      <MapPin className="h-3.5 w-3.5" />
+                      Google
+                    </a>
+                  </div>
                 )}
               </header>
 
@@ -399,17 +413,34 @@ export default async function InfoPage() {
             <h2 className="font-medium">Where we're staying</h2>
           </header>
           {lodging.address && (
-            <a
-              href={`https://maps.google.com/?q=${encodeURIComponent(lodging.address)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block rounded-xl bg-background/40 p-3 text-sm hover:bg-muted"
-            >
-              <span className="inline-flex items-center gap-1.5">
+            <div className="rounded-xl bg-background/40 p-3 text-sm">
+              <p className="inline-flex items-center gap-1.5">
                 <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
                 {lodging.address}
-              </span>
-            </a>
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <a
+                  href={`https://maps.apple.com/?q=${encodeURIComponent(lodging.address)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-ghost inline-flex items-center gap-1.5 text-xs"
+                  title="Open in Apple Maps"
+                >
+                  <MapPin className="h-3.5 w-3.5" />
+                  Apple Maps
+                </a>
+                <a
+                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(lodging.address)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-ghost inline-flex items-center gap-1.5 text-xs"
+                  title="Open in Google Maps"
+                >
+                  <MapPin className="h-3.5 w-3.5" />
+                  Google Maps
+                </a>
+              </div>
+            </div>
           )}
           {(lodging.access_code || lodging.wifi_ssid) && (
             <ul className="grid grid-cols-2 gap-2 text-sm">
@@ -438,7 +469,7 @@ export default async function InfoPage() {
           )}
           {lodging.notes && (
             <p className="rounded-xl bg-background/40 p-3 text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-              {lodging.notes}
+              <Linkify text={lodging.notes} />
             </p>
           )}
         </section>

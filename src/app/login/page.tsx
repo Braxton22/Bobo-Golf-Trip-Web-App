@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
   Card,
@@ -15,9 +16,23 @@ import { Label } from "@/components/ui/label";
 import { Flag, Mail, CheckCircle2, AlertCircle } from "lucide-react";
 
 export default function LoginPage() {
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
+
+  // Surface a failed callback ("?error=...") so the user understands why
+  // they're back on the login page instead of signed in.
+  useEffect(() => {
+    const err = searchParams.get("error");
+    if (!err) return;
+    setError(
+      err === "auth"
+        ? "Couldn't finish sign-in. Please request a new link and open it in the same browser."
+        : err
+    );
+    setStatus("error");
+  }, [searchParams]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();

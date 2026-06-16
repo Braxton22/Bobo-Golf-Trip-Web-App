@@ -7,6 +7,7 @@ import { SiteHeader } from "@/components/layout/site-header";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { BackToHome } from "@/components/layout/back-to-home";
 import { ThemePrepaintScript } from "@/components/layout/theme-toggle";
+import { HashSessionHandler } from "@/components/auth/hash-session";
 import { PWARegister } from "@/components/pwa-register";
 import { isAppAdminEmail } from "@/lib/app-admin";
 
@@ -72,6 +73,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           </main>
           <SiteFooter />
         </div>
+        <HashSessionHandler />
         <PWARegister />
       </body>
     </html>

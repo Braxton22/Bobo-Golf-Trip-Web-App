@@ -156,22 +156,37 @@ export default async function InfoPage() {
           const cTees = teesByCourse.get(course.id) ?? [];
           const totalPar = cHoles.reduce((a, h) => a + h.par, 0);
           const days = (daysByCourse.get(course.id) ?? []).sort((a, b) => a - b);
+          const par3 = cHoles.filter((h) => h.par === 3).length;
+          const par4 = cHoles.filter((h) => h.par === 4).length;
+          const par5 = cHoles.filter((h) => h.par >= 5).length;
+          // Sum yardages per tee for the high-level row.
+          const teeTotals = cTees.map((t) => ({
+            id: t.id,
+            name: t.name,
+            yards: cHoles.reduce((acc, h) => acc + (yardByTeeHole.get(`${t.id}|${h.id}`) ?? 0), 0),
+          }));
           return (
             <section key={course.id} className="card space-y-3">
               <header className="flex items-baseline justify-between gap-2">
-                <h2 className="font-medium">
-                  {course.name}
-                  <span className="ml-2 text-xs text-muted-foreground">
+                <div className="min-w-0">
+                  <h2 className="font-medium truncate">{course.name}</h2>
+                  <p className="text-xs text-muted-foreground">
                     par {totalPar || "—"}
-                    {days.length > 0 ? ` · Day ${days.join(", ")}` : ""}
-                  </span>
-                </h2>
+                    {days.length > 0 && ` · Day ${days.join(", ")}`}
+                    {cHoles.length > 0 && (
+                      <>
+                        {" · "}
+                        {par3} × par 3, {par4} × par 4, {par5} × par 5
+                      </>
+                    )}
+                  </p>
+                </div>
                 {course.latitude != null && course.longitude != null && (
                   <a
                     href={`https://maps.google.com/?q=${course.latitude},${course.longitude}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+                    className="btn-ghost inline-flex shrink-0 items-center gap-1.5 text-xs"
                   >
                     <MapPin className="h-3.5 w-3.5" />
                     Map
@@ -179,37 +194,20 @@ export default async function InfoPage() {
                 )}
               </header>
 
-              {cHoles.length > 0 && (
-                <div className="overflow-x-auto -mx-2 px-2">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                        <th className="text-left py-1.5 pr-2">Hole</th>
-                        <th className="text-left py-1.5 pr-2">Par</th>
-                        <th className="text-left py-1.5 pr-2">SI</th>
-                        {cTees.map((t) => (
-                          <th key={t.id} className="text-right py-1.5 pl-2 tabular-nums">
-                            {t.name}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {cHoles.map((h) => (
-                        <tr key={h.id} className="border-t border-line">
-                          <td className="py-1.5 pr-2 font-medium tabular-nums">{h.hole_number}</td>
-                          <td className="py-1.5 pr-2 tabular-nums">{h.par}</td>
-                          <td className="py-1.5 pr-2 tabular-nums text-muted-foreground">{h.stroke_index}</td>
-                          {cTees.map((t) => (
-                            <td key={t.id} className="py-1.5 pl-2 text-right tabular-nums">
-                              {yardByTeeHole.get(`${t.id}|${h.id}`) ?? "—"}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+              {teeTotals.length > 0 && (
+                <ul className="flex flex-wrap gap-1.5">
+                  {teeTotals.map((t) => (
+                    <li
+                      key={t.id}
+                      className="rounded-full border border-line bg-background/40 px-2.5 py-1 text-[11px]"
+                    >
+                      <span className="text-muted-foreground">{t.name}</span>
+                      <span className="ml-1.5 font-medium tabular-nums">
+                        {t.yards > 0 ? `${t.yards.toLocaleString()} yds` : "—"}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               )}
             </section>
           );

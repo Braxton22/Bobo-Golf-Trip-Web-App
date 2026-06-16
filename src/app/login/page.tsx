@@ -39,12 +39,14 @@ export default function LoginPage() {
     setStatus("sending");
     setError(null);
     const supabase = createClient();
-    const siteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL ||
-      (typeof window !== "undefined" ? window.location.origin : "");
+    // Always return to the EXACT origin the user is on. The PKCE code_verifier
+    // cookie is written for this origin; if we redirect anywhere else (e.g. a
+    // stale NEXT_PUBLIC_SITE_URL from a renamed deployment) the verifier cookie
+    // won't be present on exchange → "PKCE code verifier not found in storage".
+    const origin = window.location.origin;
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: `${siteUrl}/auth/callback` },
+      options: { emailRedirectTo: `${origin}/auth/callback` },
     });
     if (error) {
       setError(error.message);

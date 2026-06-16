@@ -28,8 +28,11 @@ import {
   type HoleScore,
 } from "@/lib/scoring";
 import { FORMAT_LABEL } from "@/lib/trip-formats";
-import type { Hole, Match, Photo, Player, Round, Score, Team } from "@/lib/db";
+import type { Course, Hole, Match, Photo, Player, PlayerRoundSettings, Round, Score, Team } from "@/lib/db";
 import { LeaderboardTicker, type TickerRow } from "@/components/home/leaderboard-ticker";
+import { HomeHero, type HeroState } from "@/components/home/home-hero";
+import { DayStrip, type DayCard } from "@/components/home/day-strip";
+import { LivePulse } from "@/components/home/live-pulse";
 import { RealtimeRefresh } from "@/app/leaderboard/realtime-refresh";
 
 export default async function Home() {
@@ -59,14 +62,22 @@ export default async function Home() {
 
   // ---- Leaderboard preview: Ryder Cup → USA vs Europe total points;
   //      casual → rolling net-to-par ticker of the active round. ------------
-  const [{ data: roundsRaw }, { data: playersRaw }, { data: teamsRaw }] = await Promise.all([
+  const [
+    { data: roundsRaw },
+    { data: playersRaw },
+    { data: teamsRaw },
+    { data: coursesRaw },
+  ] = await Promise.all([
     supabase.from("rounds").select("*").eq("trip_id", trip.id).order("day_number"),
     supabase.from("players").select("*").eq("trip_id", trip.id),
     supabase.from("teams").select("*").eq("trip_id", trip.id).order("created_at"),
+    supabase.from("courses").select("id, name").eq("trip_id", trip.id),
   ]);
   const rounds = (roundsRaw ?? []) as Round[];
   const players = (playersRaw ?? []) as Player[];
   const teams = (teamsRaw ?? []) as Team[];
+  const courses = (coursesRaw ?? []) as Pick<Course, "id" | "name">[];
+  const courseNameById = new Map(courses.map((c) => [c.id, c.name]));
 
   let scores: Score[] = [];
   let matches: Match[] = [];
@@ -144,6 +155,48 @@ export default async function Home() {
     }
   }
 
+  // ---- Day-strip + hero state -------------------------------------------
+  let prs: PlayerRoundSettings[] = [];
+  if (rounds.length > 0) {
+    const { data } = await supabase
+      .from("player_round_settings")
+      .select("round_id, tee_time")
+      .in("round_id", rounds.map((r) => r.id));
+    prs = (data ?? []) as PlayerRoundSettings[];
+  }
+  const earliestTeeByRound = new Map<string, string>();
+  for (const r of prs) {
+    if (!r.tee_time) continue;
+    const cur = earliestTeeByRound.get(r.round_id);
+    if (!cur || r.tee_time < cur) earliestTeeByRound.set(r.round_id, r.tee_time);
+  }
+
+  // Determine which day is "current" — the latest round with any scores, or
+  // the first un-played round if none have scores yet.
+  const scoredRoundIds = new Set(scores.map((s) => s.round_id));
+  const currentRoundId =
+    [...rounds].reverse().find((r) => scoredRoundIds.has(r.id))?.id ??
+    rounds.find((r) => !scoredRoundIds.has(r.id))?.id ??
+    null;
+
+  const dayCards: DayCard[] = rounds.map((r) => ({
+    round_id: r.id,
+    day_number: r.day_number,
+    course_name: r.course_id ? courseNameById.get(r.course_id) ?? null : null,
+    format_label: FORMAT_LABEL[r.format],
+    date_label: r.date ? formatDateLabel(r.date) : null,
+    earliest_tee_time: earliestTeeByRound.get(r.id) ? formatTimeLabel(earliestTeeByRound.get(r.id)!) : null,
+    current: r.id === currentRoundId,
+  }));
+
+  const heroState: HeroState = computeHeroState({
+    startDate: trip.start_date,
+    endDate: trip.end_date,
+    rounds,
+    scoredRoundIds,
+    currentRoundId,
+  });
+
   // ---- News + photos -----------------------------------------------------
   const feedItems = (await buildFeedItems(supabase, trip.id, 4)) ?? [];
 
@@ -169,30 +222,38 @@ export default async function Home() {
           so the leaderboard preview reflects "USA goes 1 UP" in real time. */}
       <RealtimeRefresh tripId={trip.id} roundIds={rounds.map((r) => r.id)} />
 
-      {/* Title */}
-      <header className="space-y-0.5">
-        <h1 className="font-serif text-3xl font-semibold leading-tight">{trip.name}</h1>
-        <p className="text-sm text-muted-foreground">
-          {trip.location ? `${trip.location} · ` : ""}
-          {trip.year}
-        </p>
-      </header>
+      {/* Hero */}
+      <HomeHero
+        tripName={trip.name}
+        location={trip.location}
+        year={trip.year}
+        state={heroState}
+      />
+
+      {/* Day-by-day course strip */}
+      {dayCards.length > 0 && <DayStrip days={dayCards} />}
 
       {/* Leaderboard preview */}
       <section className="space-y-2">
-        <SectionHead
-          title="Leaderboard"
-          href="/leaderboard"
-          hint={
-            cup
+        <div className="flex items-baseline justify-between">
+          <h2 className="inline-flex items-center gap-2 font-serif text-xl font-semibold">
+            Leaderboard
+            <LivePulse />
+          </h2>
+          <Link
+            href="/leaderboard"
+            className="inline-flex items-center gap-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground"
+          >
+            {cup
               ? cup.status === "decided" || cup.status === "tie"
                 ? "Final · tap for matches"
                 : `${cup.pointsRemaining} pts remaining`
               : activeRound
                 ? `Day ${activeRound.day_number} — ${FORMAT_LABEL[activeRound.format]}`
-                : undefined
-          }
-        />
+                : "See all"}
+            <ChevronRight className="h-3 w-3" />
+          </Link>
+        </div>
         {cup ? (
           <Link
             href="/leaderboard"
@@ -297,6 +358,63 @@ export default async function Home() {
 }
 
 // ---------------------------------------------------------------------------
+
+function computeHeroState(opts: {
+  startDate: string | null;
+  endDate: string | null;
+  rounds: Round[];
+  scoredRoundIds: Set<string>;
+  currentRoundId: string | null;
+}): HeroState {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Trip already complete?
+  if (opts.endDate) {
+    const end = new Date(opts.endDate + "T23:59:59");
+    if (today.getTime() > end.getTime()) return { kind: "complete" };
+  }
+
+  // Mid-trip — any scores?
+  if (opts.scoredRoundIds.size > 0 && opts.currentRoundId) {
+    const r = opts.rounds.find((x) => x.id === opts.currentRoundId);
+    if (r) return { kind: "in_progress", dayNumber: r.day_number };
+  }
+
+  // Future trip — countdown to start.
+  if (opts.startDate) {
+    const start = new Date(opts.startDate + "T00:00:00");
+    const diff = start.getTime() - today.getTime();
+    const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+    if (days > 0) {
+      const weekday = start.toLocaleDateString(undefined, {
+        weekday: "long",
+        month: "short",
+        day: "numeric",
+      });
+      return { kind: "countdown", weekday, days };
+    }
+  }
+
+  return { kind: "ready" };
+}
+
+function formatDateLabel(iso: string): string {
+  // "Fri Jun 19" — local-aware, short.
+  const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
+
+function formatTimeLabel(time: string): string {
+  // DB stores "HH:MM:SS"; render as "10:10 AM".
+  const [hStr, mStr] = time.split(":");
+  const h = Number(hStr);
+  const m = Number(mStr);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return time;
+  const date = new Date();
+  date.setHours(h, m, 0, 0);
+  return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
 
 function CupSide({ name, points, highlight }: { name: string; points: number; highlight: boolean }) {
   const display = (() => {

@@ -14,7 +14,7 @@ export function SiteFooter() {
           </span>
         </Link>
         <p className="text-sm text-muted-foreground">
-          Three rounds. Two teams. One Cup.
+          Three rounds. Two teams. One cup.
         </p>
         <p className="text-xs text-muted-foreground">
           &copy; {year} Bobo Golf Trip

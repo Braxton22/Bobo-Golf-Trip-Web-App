@@ -160,15 +160,18 @@ export default async function Home() {
   if (rounds.length > 0) {
     const { data } = await supabase
       .from("player_round_settings")
-      .select("round_id, tee_time")
+      .select("round_id, player_id, tee_time")
       .in("round_id", rounds.map((r) => r.id));
     prs = (data ?? []) as PlayerRoundSettings[];
   }
+  const myPlayerId = players.find((p) => p.user_id === user.id)?.id ?? null;
   const earliestTeeByRound = new Map<string, string>();
+  const myTeeByRound = new Map<string, string>();
   for (const r of prs) {
     if (!r.tee_time) continue;
     const cur = earliestTeeByRound.get(r.round_id);
     if (!cur || r.tee_time < cur) earliestTeeByRound.set(r.round_id, r.tee_time);
+    if (myPlayerId && r.player_id === myPlayerId) myTeeByRound.set(r.round_id, r.tee_time);
   }
 
   // Determine which day is "current" — the latest round with any scores, or
@@ -186,6 +189,7 @@ export default async function Home() {
     format_label: FORMAT_LABEL[r.format],
     date_label: r.date ? formatDateLabel(r.date) : null,
     earliest_tee_time: earliestTeeByRound.get(r.id) ? formatTimeLabel(earliestTeeByRound.get(r.id)!) : null,
+    my_tee_time: myTeeByRound.get(r.id) ? formatTimeLabel(myTeeByRound.get(r.id)!) : null,
     current: r.id === currentRoundId,
   }));
 

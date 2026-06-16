@@ -8,6 +8,7 @@ export type DayCard = {
   format_label: string;
   date_label: string | null;
   earliest_tee_time: string | null;
+  my_tee_time: string | null;
   current: boolean;
 };
 
@@ -52,12 +53,17 @@ export function DayStrip({ days }: { days: DayCard[] }) {
                   {d.date_label}
                 </span>
               )}
-              {d.earliest_tee_time && (
+              {d.my_tee_time ? (
+                <span className="inline-flex items-center gap-1 font-medium text-[hsl(var(--primary))]">
+                  <ClockIcon className="h-3 w-3" />
+                  You tee off {d.my_tee_time}
+                </span>
+              ) : d.earliest_tee_time ? (
                 <span className="inline-flex items-center gap-1">
                   <ClockIcon className="h-3 w-3" />
-                  {d.earliest_tee_time}
+                  First tee {d.earliest_tee_time}
                 </span>
-              )}
+              ) : null}
               {d.course_name && (
                 <span className="inline-flex items-center gap-1">
                   <MapPin className="h-3 w-3" />

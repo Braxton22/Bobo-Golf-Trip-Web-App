@@ -2,7 +2,9 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
   BookOpen,
+  Calendar,
   Camera,
+  Clock,
   Cloud,
   CloudRain,
   Droplets,
@@ -15,7 +17,16 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveTrip } from "@/lib/trip-context";
-import type { Course, Hole, HoleYardage, Lodging, Round, Tee } from "@/lib/db";
+import type {
+  Course,
+  Hole,
+  HoleYardage,
+  Lodging,
+  Player,
+  PlayerRoundSettings,
+  Round,
+  Tee,
+} from "@/lib/db";
 import { FORMAT_LABEL } from "@/lib/trip-formats";
 import { fetchForecast, type DayForecast } from "@/lib/weather";
 
@@ -36,15 +47,40 @@ export default async function InfoPage() {
   }
 
   // Courses (a trip can play several) + their holes/tees/yardages, plus
-  // rounds so we can label which day plays each course.
-  const [{ data: coursesRaw }, { data: roundsRaw }, { data: lodgingRow }] = await Promise.all([
+  // rounds so we can label which day plays each course. Also pull the trip
+  // roster + per-round settings for the tee sheet section.
+  const [
+    { data: coursesRaw },
+    { data: roundsRaw },
+    { data: lodgingRow },
+    { data: playersRaw },
+  ] = await Promise.all([
     supabase.from("courses").select("*").eq("trip_id", trip.id).order("created_at"),
-    supabase.from("rounds").select("day_number, format, course_id").eq("trip_id", trip.id).order("day_number"),
+    supabase
+      .from("rounds")
+      .select("id, day_number, format, course_id, date")
+      .eq("trip_id", trip.id)
+      .order("day_number"),
     supabase.from("lodging").select("*").eq("trip_id", trip.id).maybeSingle(),
+    supabase.from("players").select("*").eq("trip_id", trip.id),
   ]);
   const courses = (coursesRaw ?? []) as Course[];
-  const rounds = (roundsRaw ?? []) as Pick<Round, "day_number" | "format" | "course_id">[];
+  const rounds = (roundsRaw ?? []) as Pick<Round, "id" | "day_number" | "format" | "course_id" | "date">[];
   const lodging = lodgingRow as Lodging | null;
+  const players = (playersRaw ?? []) as Player[];
+
+  // Per-round tee + tee-time per player (fetched here; rendered below once
+  // tees are loaded so we can map tee_id → tee name).
+  let prs: PlayerRoundSettings[] = [];
+  if (rounds.length > 0) {
+    const { data } = await supabase
+      .from("player_round_settings")
+      .select("*")
+      .in("round_id", rounds.map((r) => r.id));
+    prs = (data ?? []) as PlayerRoundSettings[];
+  }
+  const playerById = new Map(players.map((p) => [p.id, p]));
+  const myPlayerId = players.find((p) => p.user_id === user.id)?.id ?? null;
 
   let holes: Hole[] = [];
   let tees: Tee[] = [];
@@ -78,6 +114,65 @@ export default async function InfoPage() {
     if (!r.course_id) continue;
     (daysByCourse.get(r.course_id) ?? daysByCourse.set(r.course_id, []).get(r.course_id)!).push(r.day_number);
   }
+
+  // Tee sheet: one card per round, sorted by tee time. Group go-time = the
+  // earliest tee time across the field for that day.
+  const courseNameById = new Map(courses.map((c) => [c.id, c.name]));
+  const teeNameById = new Map(tees.map((t) => [t.id, t.name]));
+  const settingsByRound = new Map<string, PlayerRoundSettings[]>();
+  for (const s of prs) {
+    (settingsByRound.get(s.round_id) ?? settingsByRound.set(s.round_id, []).get(s.round_id)!).push(s);
+  }
+  type TeeSheetRow = {
+    player_id: string;
+    name: string;
+    time: string | null;
+    tee_name: string | null;
+    is_me: boolean;
+  };
+  type TeeSheetDay = {
+    round_id: string;
+    day_number: number;
+    course_name: string | null;
+    date_label: string | null;
+    first_tee: string | null;
+    my_tee_time: string | null;
+    rows: TeeSheetRow[];
+  };
+  const teeSheet: TeeSheetDay[] = rounds.map((r) => {
+    const settings = settingsByRound.get(r.id) ?? [];
+    // One row per player on the trip — players with no setting show "—".
+    const settingByPlayer = new Map(settings.map((s) => [s.player_id, s]));
+    const rows: TeeSheetRow[] = players
+      .map((p) => {
+        const s = settingByPlayer.get(p.id);
+        return {
+          player_id: p.id,
+          name: p.name,
+          time: s?.tee_time ?? null,
+          tee_name: s?.tee_id ? teeNameById.get(s.tee_id) ?? null : null,
+          is_me: !!myPlayerId && p.id === myPlayerId,
+        };
+      })
+      .sort((a, b) => {
+        if (a.time && b.time) return a.time.localeCompare(b.time);
+        if (a.time) return -1;
+        if (b.time) return 1;
+        return a.name.localeCompare(b.name);
+      });
+    const first = rows.find((r) => r.time)?.time ?? null;
+    const mine = rows.find((r) => r.is_me && r.time)?.time ?? null;
+    return {
+      round_id: r.id,
+      day_number: r.day_number,
+      course_name: r.course_id ? courseNameById.get(r.course_id) ?? null : null,
+      date_label: r.date ? formatDateLabel(r.date) : null,
+      first_tee: first,
+      my_tee_time: mine,
+      rows,
+    };
+  });
+  const teeSheetHasAnyTime = teeSheet.some((d) => d.first_tee != null);
 
   // Format-explainer subtitle adapts to the trip.
   const isRyder = trip.trip_type === "ryder_cup";
@@ -214,6 +309,88 @@ export default async function InfoPage() {
         })
       )}
 
+      {/* Tee sheet ----------------------------------------------------- */}
+      {rounds.length > 0 && (
+        <section className="space-y-2">
+          <header className="flex items-baseline justify-between gap-2">
+            <h2 className="font-serif text-xl font-semibold">Tee sheet</h2>
+            <span className="text-[11px] text-muted-foreground">
+              Be at the first tee 10 min early
+            </span>
+          </header>
+          {!teeSheetHasAnyTime ? (
+            <p className="card text-sm text-muted-foreground">
+              Tee times haven't been set yet. The admin will publish them under
+              Admin → Rounds.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {teeSheet.map((d) => (
+                <li key={d.round_id} className="card space-y-3">
+                  <header className="flex flex-wrap items-baseline justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                        Day {d.day_number}
+                        {d.date_label ? ` · ${d.date_label}` : ""}
+                      </p>
+                      <h3 className="font-serif text-lg font-semibold truncate">
+                        {d.course_name ?? "Course TBD"}
+                      </h3>
+                    </div>
+                    {d.first_tee ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-[hsl(var(--primary)/0.4)] bg-[hsl(var(--primary)/0.12)] px-3 py-1 text-xs font-medium text-[hsl(var(--primary))]">
+                        <Clock className="h-3 w-3" />
+                        First tee {formatTimeLabel(d.first_tee)}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">
+                        <Calendar className="h-3 w-3" />
+                        Not yet posted
+                      </span>
+                    )}
+                  </header>
+
+                  {d.my_tee_time && (
+                    <div className="rounded-xl bg-[hsl(var(--gold)/0.15)] px-3 py-2 text-sm">
+                      <span className="font-semibold">You tee off at {formatTimeLabel(d.my_tee_time)}.</span>{" "}
+                      <span className="text-muted-foreground">Plan to be on the tee at least 10 minutes before.</span>
+                    </div>
+                  )}
+
+                  <ul className="divide-y divide-line">
+                    {d.rows.map((row) => (
+                      <li
+                        key={row.player_id}
+                        className={`flex items-center gap-3 py-1.5 text-sm ${
+                          row.is_me ? "text-[hsl(var(--primary))]" : ""
+                        }`}
+                      >
+                        <span className="w-16 font-medium tabular-nums">
+                          {row.time ? formatTimeLabel(row.time) : "—"}
+                        </span>
+                        <span className="flex-1 truncate">
+                          {row.name}
+                          {row.is_me && (
+                            <span className="ml-1.5 rounded-full bg-[hsl(var(--primary)/0.15)] px-1.5 text-[10px] font-medium">
+                              YOU
+                            </span>
+                          )}
+                        </span>
+                        {row.tee_name && (
+                          <span className="rounded-full border border-border bg-background/40 px-2 py-0.5 text-[10px] text-muted-foreground">
+                            {row.tee_name}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
       {/* Lodging -------------------------------------------------------- */}
       {lodging && (lodging.address || lodging.wifi_ssid || lodging.notes) && (
         <section className="card space-y-3">
@@ -291,6 +468,22 @@ export default async function InfoPage() {
       </Link>
     </div>
   );
+}
+
+function formatDateLabel(iso: string): string {
+  const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
+
+function formatTimeLabel(time: string): string {
+  // DB stores "HH:MM:SS"; render as "10:10 AM".
+  const [hStr, mStr] = time.split(":");
+  const h = Number(hStr);
+  const m = Number(mStr);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return time;
+  const date = new Date();
+  date.setHours(h, m, 0, 0);
+  return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
 function WeatherIcon({ code }: { code: number }) {

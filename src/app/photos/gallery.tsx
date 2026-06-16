@@ -1,14 +1,15 @@
 "use client";
 
-// Client-side photo grid with multi-select + ZIP download. Selection mode is
-// toggled from a top button. Tapping a photo while in select mode toggles its
-// selection (visual checkmark). A sticky bottom bar appears with the count
-// and a Download button that zips the selected files in the browser and saves
-// a single .zip — way nicer than triggering N separate downloads, especially
-// on iOS where multi-download prompts get blocked.
+// Client-side photo grid with multi-select + native-save. Selection mode is
+// toggled from a top button; tapping a photo while in select mode toggles
+// its selection. The Save button uses the Web Share API with files when
+// available — on iOS this opens the share sheet, which includes "Save N
+// Images" that drops them straight into the Photos app. On browsers without
+// share-files support (e.g. desktop Chrome/Firefox) we fall back to
+// triggering one download per file. No zip.
 
-import { useMemo, useState } from "react";
-import { CheckCircle2, Download, Loader2, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { CheckCircle2, Download, Loader2, Share2, Trash2, X } from "lucide-react";
 import { deletePhotoAction } from "./actions";
 
 export type PhotoItem = {
@@ -20,12 +21,33 @@ export type PhotoItem = {
   storage_path: string;
 };
 
-export function PhotoGallery({ items, myUserId, tripName }: { items: PhotoItem[]; myUserId: string; tripName: string }) {
+export function PhotoGallery({ items, myUserId }: { items: PhotoItem[]; myUserId: string }) {
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [downloading, setDownloading] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [shareSupported, setShareSupported] = useState(false);
+
+  // Detect whether the browser can share files (iOS Safari ≥ 15 / Android
+  // Chrome / Safari macOS). We probe with an empty filename to avoid actually
+  // reading any file; navigator.canShare returns true if the OS is willing.
+  useEffect(() => {
+    try {
+      const probe = new File([new Blob([""], { type: "image/jpeg" })], "probe.jpg", {
+        type: "image/jpeg",
+      });
+      const nav = navigator as Navigator & {
+        canShare?: (data: { files?: File[] }) => boolean;
+        share?: (data: { files?: File[] }) => Promise<void>;
+      };
+      setShareSupported(
+        typeof nav.share === "function" && !!nav.canShare?.({ files: [probe] })
+      );
+    } catch {
+      setShareSupported(false);
+    }
+  }, []);
 
   const allIds = useMemo(() => items.filter((i) => i.url).map((i) => i.id), [items]);
   const allSelected = allIds.length > 0 && allIds.every((id) => selected.has(id));
@@ -38,7 +60,6 @@ export function PhotoGallery({ items, myUserId, tripName }: { items: PhotoItem[]
       return next;
     });
   }
-
   function selectAll() {
     setSelected(new Set(allIds));
   }
@@ -51,44 +72,64 @@ export function PhotoGallery({ items, myUserId, tripName }: { items: PhotoItem[]
     setError(null);
   }
 
-  async function downloadSelected() {
-    if (selected.size === 0 || downloading) return;
-    setDownloading(true);
+  async function save() {
+    if (selected.size === 0 || busy) return;
+    setBusy(true);
     setError(null);
     const picks = items.filter((i) => selected.has(i.id) && i.url);
     setProgress({ done: 0, total: picks.length });
+
     try {
-      // Single image: skip the zip overhead and save directly.
-      if (picks.length === 1) {
-        const p = picks[0];
-        const blob = await fetchBlob(p.url!);
-        triggerDownload(blob, filenameFor(p));
-        setProgress({ done: 1, total: 1 });
-      } else {
-        // Multi-file → bundle into one zip.
-        const { default: JSZip } = await import("jszip");
-        const zip = new JSZip();
-        const folder = zip.folder(safeFolder(tripName)) ?? zip;
-        let done = 0;
-        for (const p of picks) {
-          try {
-            const blob = await fetchBlob(p.url!);
-            folder.file(filenameFor(p), blob);
-          } catch {
-            // skip the one that failed; carry on with the rest
-          }
-          done += 1;
-          setProgress({ done, total: picks.length });
+      // Fetch each photo as a File.
+      const files: File[] = [];
+      for (let i = 0; i < picks.length; i++) {
+        const p = picks[i];
+        try {
+          const blob = await fetchBlob(p.url!);
+          files.push(
+            new File([blob], filenameFor(p, blob.type), { type: blob.type || "image/jpeg" })
+          );
+        } catch {
+          // skip a single bad URL; keep the rest
         }
-        const out = await zip.generateAsync({ type: "blob" });
-        triggerDownload(out, `${safeFolder(tripName)}-photos.zip`);
+        setProgress({ done: i + 1, total: picks.length });
       }
-      // Stay in select mode but clear so the user can pick again.
+      if (files.length === 0) throw new Error("Couldn't fetch any photos.");
+
+      const nav = navigator as Navigator & {
+        canShare?: (data: { files?: File[] }) => boolean;
+        share?: (data: { files?: File[] }) => Promise<void>;
+      };
+      const canShareThese =
+        typeof nav.share === "function" && !!nav.canShare?.({ files });
+
+      if (canShareThese) {
+        // iOS: opens the share sheet → "Save N Images" saves to Photos.
+        try {
+          await nav.share!({ files });
+          clear();
+          return;
+        } catch (err) {
+          // Treat user cancellation as a soft exit; only fall through on
+          // real errors.
+          if (err instanceof Error && err.name === "AbortError") return;
+        }
+      }
+
+      // Fallback for desktop / unsupported browsers: trigger one download per
+      // file. iOS Safari ignores `download` on cross-origin links, so the
+      // share path is what matters there.
+      for (const f of files) {
+        triggerDownload(f, f.name);
+        // Brief gap so browsers don't dedupe rapid clicks.
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setTimeout(r, 80));
+      }
       clear();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Download failed");
+      setError(err instanceof Error ? err.message : "Save failed");
     } finally {
-      setDownloading(false);
+      setBusy(false);
       setProgress(null);
     }
   }
@@ -100,6 +141,15 @@ export function PhotoGallery({ items, myUserId, tripName }: { items: PhotoItem[]
       </p>
     );
   }
+
+  const saveLabel =
+    selected.size === 1
+      ? shareSupported
+        ? "Save to Photos"
+        : "Download"
+      : shareSupported
+        ? `Save ${selected.size} to Photos`
+        : `Download (${selected.size})`;
 
   return (
     <div className="space-y-3">
@@ -224,7 +274,7 @@ export function PhotoGallery({ items, myUserId, tripName }: { items: PhotoItem[]
         })}
       </ul>
 
-      {/* Sticky download action bar */}
+      {/* Sticky save action bar */}
       {selectMode && selected.size > 0 && (
         <div
           className="sticky bottom-3 z-30 flex items-center justify-between gap-2 rounded-2xl border border-border bg-card p-2.5 shadow-lift"
@@ -236,29 +286,35 @@ export function PhotoGallery({ items, myUserId, tripName }: { items: PhotoItem[]
               : `${selected.size} selected`}
           </span>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={clear}
-              disabled={downloading}
-              className="btn-ghost text-xs"
-            >
+            <button type="button" onClick={clear} disabled={busy} className="btn-ghost text-xs">
               Clear
             </button>
             <button
               type="button"
-              onClick={downloadSelected}
-              disabled={downloading}
+              onClick={save}
+              disabled={busy}
               className="btn inline-flex items-center gap-1.5 text-sm disabled:opacity-60"
             >
-              {downloading ? (
+              {busy ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
+              ) : shareSupported ? (
+                <Share2 className="h-4 w-4" />
               ) : (
                 <Download className="h-4 w-4" />
               )}
-              {selected.size === 1 ? "Download" : `Download (${selected.size})`}
+              {saveLabel}
             </button>
           </div>
         </div>
+      )}
+
+      {selectMode && shareSupported && (
+        <p className="text-[11px] text-muted-foreground">
+          Tap{" "}
+          <strong>Save {selected.size > 1 ? `${selected.size} Images` : "Image"}</strong>{" "}
+          in your share sheet to drop them into Photos. Works on iPhone (any browser)
+          and Android.
+        </p>
       )}
     </div>
   );
@@ -280,13 +336,20 @@ function triggerDownload(blob: Blob, filename: string) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  // Defer revoke so the download actually starts.
   setTimeout(() => URL.revokeObjectURL(href), 5000);
 }
 
-function filenameFor(p: PhotoItem): string {
-  // Pull the extension from the storage path, fall back to .jpg.
-  const ext = p.storage_path.match(/\.[a-z0-9]{1,5}$/i)?.[0] ?? ".jpg";
+function filenameFor(p: PhotoItem, mime?: string): string {
+  // Prefer the storage path's extension; fall back to the mime type.
+  let ext = p.storage_path.match(/\.[a-z0-9]{1,5}$/i)?.[0] ?? "";
+  if (!ext && mime) {
+    if (mime === "image/jpeg") ext = ".jpg";
+    else if (mime === "image/png") ext = ".png";
+    else if (mime === "image/heic") ext = ".heic";
+    else if (mime === "image/webp") ext = ".webp";
+    else ext = ".jpg";
+  }
+  if (!ext) ext = ".jpg";
   const date = p.created_at.slice(0, 10);
   const captionSlug = p.caption ? "-" + slug(p.caption).slice(0, 40) : "";
   return `${date}${captionSlug}-${p.id.slice(0, 6)}${ext}`;
@@ -294,8 +357,4 @@ function filenameFor(p: PhotoItem): string {
 
 function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-}
-
-function safeFolder(name: string): string {
-  return slug(name) || "trip";
 }

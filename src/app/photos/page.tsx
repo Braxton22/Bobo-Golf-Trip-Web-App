@@ -56,7 +56,7 @@ export default async function PhotosPage() {
 
       <PhotoUploader tripId={trip.id} />
 
-      <PhotoGallery items={items} myUserId={user.id} tripName={trip.name} />
+      <PhotoGallery items={items} myUserId={user.id} />
     </div>
   );
 }
